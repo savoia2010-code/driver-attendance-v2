@@ -712,6 +712,123 @@ html, body {
 .text-success { color: var(--success); }
 .text-danger  { color: var(--danger); }
 .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+/* ============================================================
+   打刻画面
+   ============================================================ */
+.punch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.punch-status-bar {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+.punch-status-item { display: flex; flex-direction: column; gap: 2px; }
+.punch-status-label { font-size: 11px; color: var(--text3); }
+.punch-status-time {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+.post-end-banner {
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+/* モーダルボタン */
+.modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.modal-btn {
+  flex: 1;
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  border: none;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.modal-btn.cancel  { background: var(--surface2); color: var(--text2); }
+.modal-btn.confirm { background: var(--accent); color: #000; }
+.modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* オドメーター入力 */
+.mileage-input {
+  width: 100%;
+  background: var(--surface2);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 44px;
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 1px;
+  padding: 10px 14px;
+  text-align: center;
+}
+.mileage-input:focus { outline: none; }
+
+/* 休憩分数入力 */
+.break-mins-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.break-mins-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 36px;
+  font-family: 'Bebas Neue', sans-serif;
+  text-align: center;
+  padding: 8px;
+}
+.break-mins-input:focus { outline: none; border-color: var(--accent); }
+.break-mins-unit { font-size: 20px; color: var(--text2); white-space: nowrap; }
+.break-mins-del {
+  background: none;
+  border: 1px solid rgba(239,68,68,0.5);
+  color: var(--danger);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 20px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* 給油情報 */
+.fuel-row {
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+}
+.fuel-row-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.fuel-row-num { font-size: 13px; color: var(--text3); }
+.fuel-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* アルコール確認日時表示 */
+.alc-date-display {
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+.alc-date-display.before { background: rgba(59,130,246,0.12); color: var(--info); }
+.alc-date-display.after  { background: rgba(34,197,94,0.12);  color: var(--success); }
+.alc-confirmed-time { font-size: 22px; font-weight: 700; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -765,7 +882,56 @@ html, body {
     </button>
   </div>
   <div class="content" id="punch-content">
-    <div class="empty-state">打刻画面を読み込み中...</div>
+    <!-- 終業後編集バナー -->
+    <div id="post-end-banner" class="post-end-banner" style="display:none;">
+      ✏ 直前の記録を編集中（<span id="post-end-banner-date"></span>）
+    </div>
+    <!-- 打刻ステータスバー -->
+    <div id="punch-status-bar" class="punch-status-bar" style="display:none;">
+      <div class="punch-status-item">
+        <div class="punch-status-label">始業</div>
+        <div class="punch-status-time" id="ps-start">—</div>
+      </div>
+      <div class="punch-status-item">
+        <div class="punch-status-label">休憩中</div>
+        <div class="punch-status-time" id="ps-break">—</div>
+      </div>
+    </div>
+    <!-- 打刻グリッド -->
+    <div class="punch-grid">
+      <button class="punch-btn start" id="btn-start" onclick="openModal('start')">
+        <span class="punch-icon">🟢</span>
+        <span class="punch-label">始業</span>
+      </button>
+      <button class="punch-btn end" id="btn-end" onclick="openModal('end')" disabled>
+        <span class="punch-icon">🔴</span>
+        <span class="punch-label">到着</span>
+      </button>
+      <button class="punch-btn break-start" id="btn-breakStart" onclick="openModal('breakStart')" disabled>
+        <span class="punch-icon">☕</span>
+        <span class="punch-label">休憩開始</span>
+        <span class="punch-sub">離席</span>
+      </button>
+      <button class="punch-btn break-end" id="btn-breakEnd" onclick="openModal('breakEnd')" disabled>
+        <span class="punch-icon">▶</span>
+        <span class="punch-label">休憩終了</span>
+        <span class="punch-sub">再開</span>
+      </button>
+    </div>
+    <!-- 休憩（分数入力） -->
+    <div class="rf-section">
+      <div class="section-label" style="margin-bottom:8px;">⏱ 休憩（分数入力）</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">各休憩時間を分単位で入力（事後入力可）</div>
+      <div id="punch-manual-breaks-list"></div>
+      <div id="punch-manual-breaks-total" style="display:none;font-size:18px;color:var(--accent);font-weight:700;padding:8px 0 4px;"></div>
+      <button class="rf-add-btn" onclick="addPunchManualBreak()">＋ 休憩追加</button>
+    </div>
+    <!-- 給油情報 -->
+    <div class="rf-section">
+      <div class="section-label" style="margin-bottom:8px;">⛽ 給油情報</div>
+      <div id="rf-fuels-list"><div style="font-size:13px;color:var(--text3);">給油なし</div></div>
+      <button class="rf-add-btn" onclick="addFuel()">＋ 追加</button>
+    </div>
   </div>
 </div>
 
@@ -842,6 +1008,141 @@ html, body {
   </div>
   <div class="content" id="horeport-content">
     <div class="empty-state">報告事項を読み込み中...</div>
+  </div>
+</div>
+
+<!-- ============================================================
+     打刻時刻入力モーダル
+     ============================================================ -->
+<div class="modal-overlay" id="timeModal">
+  <div class="modal-sheet">
+    <div class="modal-title" id="modalTitle">時刻を確認・修正</div>
+    <input type="time" class="time-input" id="modalTimeInput">
+    <div id="modalMileageWrap" style="margin-top:12px;display:none;">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:6px;">
+        オドメーター（km）<span id="mileageRequiredBadge" style="color:var(--danger);margin-left:4px;">必須</span>
+      </div>
+      <input type="text" inputmode="numeric" pattern="[0-9]*"
+             class="mileage-input" id="modalMileageInput" placeholder="例: 12345">
+    </div>
+    <div id="modalNoteWrap" style="margin-top:12px;">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:6px;">現在地（任意）</div>
+      <input type="text" class="form-input" id="modalNoteInput"
+             placeholder="📍 取得中..." autocomplete="off">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeModal()">キャンセル</button>
+      <button class="modal-btn confirm" onclick="confirmPunch()">確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     始業後 運転前酒気帯び確認モーダル
+     ============================================================ -->
+<div class="modal-overlay" id="alcBStartModal" style="z-index:300;">
+  <div class="modal-sheet" style="max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+    <div class="modal-title">🔵 始業後 酒気帯び確認（運転前）</div>
+    <div class="alc-section" style="margin-bottom:16px;">
+      <div class="alc-section-label">検知器</div>
+      <div class="chip-group">
+        <button class="chip active" id="alcBStartMethod_検知器有"  onclick="alcBStartSet('method','検知器有')">有（検知器）</button>
+        <button class="chip"        id="alcBStartMethod_検知器無し" onclick="alcBStartSet('method','検知器無し')">無（目視等）</button>
+      </div>
+    </div>
+    <div class="alc-section" style="margin-bottom:16px;">
+      <div class="alc-section-label">確認方法</div>
+      <div class="chip-group">
+        <button class="chip"        id="alcBStartRemote_"     onclick="alcBStartSet('remote','')">対面</button>
+        <button class="chip active" id="alcBStartRemote_チャット" onclick="alcBStartSet('remote','チャット')">チャット</button>
+        <button class="chip"        id="alcBStartRemote_電話"    onclick="alcBStartSet('remote','電話')">電話</button>
+      </div>
+    </div>
+    <div class="alc-section" style="margin-bottom:16px;">
+      <div class="alc-section-label">アルコール検知</div>
+      <div class="chip-group">
+        <button class="chip active" id="alcBStartResult_無" onclick="alcBStartSet('result','無')">無</button>
+        <button class="chip"        id="alcBStartResult_有" onclick="alcBStartSet('result','有')">有</button>
+      </div>
+    </div>
+    <div class="alc-section" style="margin-bottom:16px;">
+      <div class="alc-section-label">宿泊</div>
+      <div class="toggle-row">
+        <span style="font-size:15px;color:var(--text2);">宿泊手当（¥5,000）</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="alcBStartLodging" onchange="alcBStartLodgingChange()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div id="alcBStartLodgingLabel" style="font-size:13px;color:var(--text3);margin-top:6px;">宿泊なし</div>
+    </div>
+    <div class="alc-section" style="margin-bottom:16px;">
+      <div class="alc-section-label">確認者</div>
+      <select class="form-select" id="alcBStartChecker" onchange="alcBStartCheckerSelect()" style="margin-bottom:8px;">
+        <option value="">選択してください</option>
+      </select>
+      <div id="alcBStartAddRow" style="display:none;flex-direction:column;gap:6px;">
+        <input type="text" class="form-input" id="alcBStartCheckerNew" placeholder="新しい確認者名">
+        <button class="btn btn-ghost btn-full" onclick="alcBStartAddChecker()">＋ 追加</button>
+      </div>
+    </div>
+    <div id="alcBStartDateRow" class="alc-date-display before" style="display:none;">
+      <div>確認日時</div>
+      <div class="alc-confirmed-time" id="alcBStartDateDisplay">—</div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeAlcBStartModal()">後で</button>
+      <button class="modal-btn confirm" id="alcBStartConfirmBtn" onclick="confirmAlcBStartModal()" disabled>確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     到着後 酒気帯び確認モーダル
+     ============================================================ -->
+<div class="modal-overlay" id="alcAModal" style="z-index:300;">
+  <div class="modal-sheet" style="max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+    <div class="modal-title">🔴 到着後 酒気帯び確認</div>
+    <div class="alc-section" style="margin-bottom:16px;">
+      <div class="alc-section-label">検知器</div>
+      <div class="chip-group">
+        <button class="chip active" id="alcAModalMethod_検知器有"  onclick="alcAModalSet('method','検知器有')">有（検知器）</button>
+        <button class="chip"        id="alcAModalMethod_検知器無し" onclick="alcAModalSet('method','検知器無し')">無（目視等）</button>
+      </div>
+    </div>
+    <div class="alc-section" style="margin-bottom:16px;">
+      <div class="alc-section-label">確認方法</div>
+      <div class="chip-group">
+        <button class="chip"        id="alcAModalRemote_"     onclick="alcAModalSet('remote','')">対面</button>
+        <button class="chip active" id="alcAModalRemote_チャット" onclick="alcAModalSet('remote','チャット')">チャット</button>
+        <button class="chip"        id="alcAModalRemote_電話"    onclick="alcAModalSet('remote','電話')">電話</button>
+      </div>
+    </div>
+    <div class="alc-section" style="margin-bottom:16px;">
+      <div class="alc-section-label">アルコール検知</div>
+      <div class="chip-group">
+        <button class="chip active" id="alcAModalResult_無" onclick="alcAModalSet('result','無')">無</button>
+        <button class="chip"        id="alcAModalResult_有" onclick="alcAModalSet('result','有')">有</button>
+      </div>
+    </div>
+    <div class="alc-section" style="margin-bottom:16px;">
+      <div class="alc-section-label">確認者</div>
+      <select class="form-select" id="alcAModalChecker" onchange="alcAModalCheckerSelect()" style="margin-bottom:8px;">
+        <option value="">選択してください</option>
+      </select>
+      <div id="alcAModalAddRow" style="display:none;flex-direction:column;gap:6px;">
+        <input type="text" class="form-input" id="alcAModalCheckerNew" placeholder="新しい確認者名">
+        <button class="btn btn-ghost btn-full" onclick="alcAModalAddChecker()">＋ 追加</button>
+      </div>
+    </div>
+    <div id="alcAModalDateRow" class="alc-date-display after" style="display:none;">
+      <div>確認日時</div>
+      <div class="alc-confirmed-time" id="alcAModalDateDisplay">—</div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="document.getElementById('alcAModal').classList.remove('open')">後で</button>
+      <button class="modal-btn confirm" onclick="confirmAlcAModal()">確定</button>
+    </div>
   </div>
 </div>
 
@@ -1306,6 +1607,742 @@ async function init() {
     return;
   }
   await startApp();
+}
+
+// ============================================================
+// 打刻状態管理
+// ============================================================
+const PUNCH_KEY = 'punch_today_v2';
+
+let todayState    = null;
+let _postEndState = null;
+let _postEndDate  = null;
+let _gasSyncTimer = null;
+
+// 宿泊フロー
+let _waitingLodgingDay2    = false;
+let _lodgingBreakStartTime = '00:00';
+let _lodgingBreakEndTime   = '00:00';
+let _lodgingDay1Date       = '';
+let _isLodgingDay1         = false;
+let _isLodgingDay2AlcB     = false;
+
+function defaultTodayState() {
+  return {
+    driverId: currentDriverId, date: todayKey(), startDate: null,
+    start: null, end: null,
+    breaks: [], manualBreaks: [],
+    startMileage: '', endMileage: '', startPlace: '', endPlace: '',
+    type: 'normal', note: '', lodging: false, fuelEntries: [],
+    alcBDate:'', alcBMethod:'検知器有', alcBRemote:'チャット', alcBResult:'無', alcBChecker:'',
+    alcADate:'', alcAMethod:'検知器有', alcARemote:'チャット', alcAResult:'無', alcAChecker:'',
+  };
+}
+
+function _realTodayKey() { return dateKey(new Date()); }
+
+function nowHHMM() {
+  const jst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+  return String(jst.getHours()).padStart(2,'0') + ':' + String(jst.getMinutes()).padStart(2,'0');
+}
+
+function loadTodayState() {
+  const key = PUNCH_KEY + '_' + currentDriverId;
+  try {
+    const raw = _store.getItem(key);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (!s.breaks) s.breaks = [];
+      todayState = { ...defaultTodayState(), ...s };
+    } else { todayState = defaultTodayState(); }
+  } catch(e) { todayState = defaultTodayState(); }
+}
+
+function saveTodayState() {
+  const key = PUNCH_KEY + '_' + currentDriverId;
+  try { _store.setItem(key, JSON.stringify(todayState)); } catch(e) {}
+}
+
+const isBreakOpen = () => {
+  const b = todayState ? todayState.breaks : [];
+  return b.length > 0 && b[b.length - 1].end === null;
+};
+
+function getActiveState() {
+  return (_postEndState && todayState && !todayState.start) ? _postEndState : todayState;
+}
+
+function saveActiveState() {
+  if (_postEndState && todayState && !todayState.start) {
+    if (!appData[currentDriverId]) appData[currentDriverId] = {};
+    appData[currentDriverId][_postEndDate] = JSON.parse(JSON.stringify(_postEndState));
+    clearTimeout(_gasSyncTimer);
+    _gasSyncTimer = setTimeout(() => syncToGAS(_postEndState), 1500);
+  } else {
+    saveTodayState();
+    clearTimeout(_gasSyncTimer);
+    _gasSyncTimer = setTimeout(() => syncToGAS(todayState), 2000);
+  }
+}
+
+// ============================================================
+// GAS同期
+// ============================================================
+function buildRecord(state) {
+  return {
+    action:       'saveRecord',
+    driverId:     state.driverId || currentDriverId,
+    driverName:   getDriverName(state.driverId || currentDriverId),
+    date:         state.startDate || state.date || todayKey(),
+    clockIn:      state.start       || '',
+    clockOut:     state.end         || '',
+    status:       state.end ? 'done' : state.start ? 'working' : 'none',
+    destination:  state.destination  || '',
+    note:         state.note         || '',
+    startMileage: state.startMileage || '',
+    endMileage:   state.endMileage   || '',
+    lodging:      state.lodging ? 1 : 0,
+    alcBMethod:   state.alcBMethod   || '',
+    alcBRemote:   state.alcBRemote   || '',
+    alcBResult:   state.alcBResult   || '',
+    alcBChecker:  state.alcBChecker  || '',
+    alcBDate:     state.alcBDate     || '',
+    alcAMethod:   state.alcAMethod   || '',
+    alcARemote:   state.alcARemote   || '',
+    alcAResult:   state.alcAResult   || '',
+    alcAChecker:  state.alcAChecker  || '',
+    alcADate:     state.alcADate     || '',
+  };
+}
+
+async function syncToGAS(state) {
+  if (!currentDriverId || !state || !state.start) return;
+  try { await gasPost(buildRecord(state)); } catch(e) {}
+}
+
+async function autoSaveRecord(rec) {
+  if (!rec) return;
+  if (!appData[currentDriverId]) appData[currentDriverId] = {};
+  const dateStr = rec.startDate || rec.date || todayKey();
+  appData[currentDriverId][dateStr] = { ...rec };
+  try { await gasPost(buildRecord(rec)); } catch(e) {}
+}
+
+// ============================================================
+// 打刻画面レンダリング
+// ============================================================
+function renderPunchScreen() {
+  loadTodayState();
+  updatePunchUI();
+  renderPunchManualBreaks();
+  renderFuels();
+}
+
+function updatePunchUI() {
+  if (!todayState) return;
+  const open = isBreakOpen();
+  const btnS  = document.getElementById('btn-start');
+  const btnE  = document.getElementById('btn-end');
+  const btnBS = document.getElementById('btn-breakStart');
+  const btnBE = document.getElementById('btn-breakEnd');
+  if (btnS)  btnS.disabled  = !!todayState.start;
+  if (btnBS) btnBS.disabled = !todayState.start || open || !!todayState.end;
+  if (btnBE) btnBE.disabled = !open;
+  if (btnE)  btnE.disabled  = !todayState.start || open || !!todayState.end;
+
+  // ステータスバー
+  const bar     = document.getElementById('punch-status-bar');
+  const psStart = document.getElementById('ps-start');
+  const psBreak = document.getElementById('ps-break');
+  if (bar) {
+    if (todayState.start) {
+      bar.style.display = 'flex';
+      if (psStart) psStart.textContent = todayState.start;
+      if (psBreak) {
+        if (open) {
+          const last = todayState.breaks[todayState.breaks.length - 1];
+          psBreak.textContent = last ? last.start : '—';
+          psBreak.style.color = 'var(--info)';
+        } else { psBreak.textContent = '—'; psBreak.style.color = ''; }
+      }
+    } else { bar.style.display = 'none'; }
+  }
+
+  // 終業後編集バナー
+  const isPostEnd = !!_postEndState && !todayState.start;
+  const banner = document.getElementById('post-end-banner');
+  if (banner) {
+    banner.style.display = isPostEnd ? 'block' : 'none';
+    const dateEl = document.getElementById('post-end-banner-date');
+    if (isPostEnd && dateEl) dateEl.textContent = _postEndDate || '';
+  }
+}
+
+// ============================================================
+// 時刻入力モーダル
+// ============================================================
+let pendingPunchType = null;
+let editTarget       = null;
+
+function openModal(type) {
+  pendingPunchType = type;
+  const labels = { start:'始業時刻', breakStart:'休憩開始時刻', breakEnd:'休憩終了時刻', end:'到着時刻' };
+  const el = document.getElementById('timeModal');
+  document.getElementById('modalTitle').textContent = (labels[type] || type) + 'を確認・修正';
+  document.getElementById('modalTimeInput').value   = nowHHMM();
+  document.getElementById('modalMileageInput').value = '';
+  el.dataset.mode = '';
+
+  const showMileage = ['start','end'].includes(type);
+  document.getElementById('modalMileageWrap').style.display = showMileage ? 'block' : 'none';
+
+  const noteWrap = document.getElementById('modalNoteWrap');
+  const noteEl   = document.getElementById('modalNoteInput');
+  if (noteWrap) noteWrap.style.display = (type === 'breakEnd') ? 'none' : 'block';
+  if (noteEl && type !== 'breakEnd') {
+    noteEl.value = '📍 取得中...'; noteEl.disabled = true;
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const lat = pos.coords.latitude.toFixed(5);
+          const lng = pos.coords.longitude.toFixed(5);
+          fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lng + '&format=json&accept-language=ja&zoom=18&addressdetails=1')
+            .then(r => r.json())
+            .then(d => {
+              const addr = d.address || {};
+              const parts = [addr.state, addr.city||addr.town||addr.village, addr.city_district||addr.suburb, addr.road].filter(Boolean);
+              noteEl.value = parts.length >= 3 ? parts.join('') + '付近'
+                : d.display_name ? d.display_name.split(',').map(s=>s.trim()).filter(s=>s&&s!=='日本').slice(0,4).reverse().join('') + '付近'
+                : lat + ',' + lng;
+              noteEl.disabled = false;
+            })
+            .catch(() => { noteEl.value = lat + ',' + lng; noteEl.disabled = false; });
+        },
+        () => { noteEl.value = ''; noteEl.disabled = false; },
+        { timeout: 8000, maximumAge: 30000 }
+      );
+    } else { noteEl.value = ''; noteEl.disabled = false; }
+  }
+  el.classList.add('open');
+}
+
+function closeModal() {
+  const el = document.getElementById('timeModal');
+  el.classList.remove('open');
+  el.dataset.mode = '';
+  pendingPunchType = null;
+  editTarget = null;
+}
+
+function openEditModal(field) {
+  editTarget = { type: field };
+  const labels = { start:'始業時刻', end:'到着時刻' };
+  const el = document.getElementById('timeModal');
+  document.getElementById('modalTitle').textContent = (labels[field] || field) + 'を修正';
+  document.getElementById('modalTimeInput').value   = (todayState && todayState[field]) || nowHHMM();
+  document.getElementById('modalMileageWrap').style.display = 'none';
+  document.getElementById('modalNoteWrap').style.display    = 'block';
+  document.getElementById('modalNoteInput').value = '';
+  el.dataset.mode = 'edit';
+  el.classList.add('open');
+}
+
+function confirmEdit() {
+  const time = document.getElementById('modalTimeInput').value;
+  if (!time || !editTarget) return;
+  if (editTarget.type === 'start')       todayState.start = time;
+  else if (editTarget.type === 'end')    todayState.end   = time;
+  else if (editTarget.type === 'break')  todayState.breaks[editTarget.breakIdx][editTarget.breakField] = time;
+  saveTodayState(); updatePunchUI(); closeModal();
+  showToast('✓ 時刻を修正しました');
+}
+
+function confirmPunch() {
+  const mode    = document.getElementById('timeModal').dataset.mode;
+  if (mode === 'edit') { confirmEdit(); return; }
+
+  const time    = document.getElementById('modalTimeInput').value;
+  const note    = document.getElementById('modalNoteInput').value;
+  const mileage = document.getElementById('modalMileageInput').value;
+  if (!time) { showToast('時刻を入力してください', true); return; }
+
+  if (['start','end'].includes(pendingPunchType) && !mileage) {
+    showToast('オドメーターを入力してください', true);
+    document.getElementById('modalMileageInput').focus();
+    return;
+  }
+
+  if (pendingPunchType === 'start') {
+    if (_postEndState) {
+      todayState = Object.assign(defaultTodayState(), _postEndState, {
+        start:null, end:null, startDate:null, startMileage:'', endMileage:'',
+        startPlace:'', endPlace:'', breaks:[], manualBreaks:[],
+        alcBDate:'', alcBMethod:'検知器有', alcBRemote:'チャット', alcBResult:'無', alcBChecker:'',
+        alcADate:'', alcAMethod:'検知器有', alcARemote:'チャット', alcAResult:'無', alcAChecker:'',
+      });
+    }
+    _postEndState = null; _postEndDate = null;
+    todayState.type = 'normal'; todayState.driverId = currentDriverId;
+    todayState.start = time; todayState.startDate = _realTodayKey();
+    if (mileage) todayState.startMileage = mileage;
+    if (note)    todayState.startPlace   = note;
+    saveTodayState(); updatePunchUI(); closeModal();
+    showToast('✓ 始業 ' + time + ' を記録しました');
+    syncToGAS(todayState);
+    setTimeout(() => openAlcBStartModal(), 300);
+    return;
+
+  } else if (pendingPunchType === 'breakStart') {
+    todayState.breaks.push({ start:time, end:null, startMileage:mileage||'', place:note||'' });
+    const dateChanged = _realTodayKey() !== (todayState.startDate || _realTodayKey());
+    if (dateChanged) {
+      saveTodayState(); updatePunchUI(); closeModal();
+      showToast('✓ 休憩開始 ' + time + ' を記録しました');
+      syncToGAS(todayState);
+      setTimeout(() => openConfirm('🌙 日付をまたいでいます', '酒気帯び確認をしますか？', () => startLodgingTransition(), 'はい', false), 400);
+      return;
+    }
+
+  } else if (pendingPunchType === 'breakEnd') {
+    const last = todayState.breaks[todayState.breaks.length - 1];
+    if (last) last.end = time;
+    if (_waitingLodgingDay2) {
+      _waitingLodgingDay2 = false; _lodgingBreakEndTime = time;
+      saveTodayState(); updatePunchUI(); closeModal();
+      showToast('✓ 休憩終了 ' + time + ' を記録しました');
+      setTimeout(() => openAlcBForNewDay(), 400);
+      return;
+    }
+
+  } else if (pendingPunchType === 'end') {
+    todayState.end = time;
+    if (mileage) todayState.endMileage = mileage;
+    if (note)    { todayState.endPlace = note; todayState.note = note; }
+    if (!appData[currentDriverId]) appData[currentDriverId] = {};
+    const dateStr = todayState.startDate || todayKey();
+    appData[currentDriverId][dateStr] = { ...todayState, breaks:[...todayState.breaks], savedAt:new Date().toISOString() };
+    const savedRecord = JSON.parse(JSON.stringify(appData[currentDriverId][dateStr]));
+    _postEndState = savedRecord;
+    _postEndDate  = savedRecord.startDate || dateStr;
+    todayState    = defaultTodayState();
+    _store.removeItem(PUNCH_KEY + '_' + currentDriverId);
+    updatePunchUI(); closeModal();
+    showToast('✓ 到着を記録しました。酒気確認をしてください');
+    syncToGAS(savedRecord);
+    setTimeout(() => openAlcAModal(savedRecord, false), 300);
+    return;
+  }
+
+  if (note && pendingPunchType !== 'breakEnd') todayState.note = note;
+  saveTodayState(); updatePunchUI(); closeModal();
+  const labels2 = { breakStart:'休憩開始', breakEnd:'休憩終了' };
+  showToast('✓ ' + (labels2[pendingPunchType] || '') + ' ' + time + ' を記録しました');
+  syncToGAS(todayState);
+}
+
+// ============================================================
+// 休憩（分数入力）
+// ============================================================
+function renderPunchManualBreaks() {
+  const list    = document.getElementById('punch-manual-breaks-list');
+  const totalEl = document.getElementById('punch-manual-breaks-total');
+  if (!list) return;
+  const st = getActiveState();
+  if (!st) return;
+  if (!st.manualBreaks || st.manualBreaks.length === 0) st.manualBreaks = [{ mins: 0 }];
+  list.innerHTML = st.manualBreaks.map((b, i) => `
+    <div class="break-mins-row">
+      <input type="text" inputmode="numeric" pattern="[0-9]*" class="break-mins-input"
+        value="${b.mins || ''}" placeholder="分"
+        onchange="updatePunchManualBreak(${i}, Number(this.value)||0)"
+        onblur="updatePunchManualBreak(${i}, Number(this.value)||0)">
+      <span class="break-mins-unit">分</span>
+      <button class="break-mins-del" onclick="deletePunchManualBreak(${i})">✕</button>
+    </div>`).join('');
+  renderPunchManualTotal();
+}
+
+function addPunchManualBreak() {
+  const st = getActiveState(); if (!st) return;
+  if (!st.manualBreaks) st.manualBreaks = [];
+  st.manualBreaks.push({ mins: 0 });
+  renderPunchManualBreaks(); saveActiveState();
+}
+
+function updatePunchManualBreak(idx, val) {
+  const st = getActiveState(); if (!st || !st.manualBreaks) return;
+  st.manualBreaks[idx].mins = val;
+  renderPunchManualTotal(); saveActiveState();
+}
+
+function deletePunchManualBreak(idx) {
+  const st = getActiveState(); if (!st || !st.manualBreaks) return;
+  st.manualBreaks.splice(idx, 1);
+  renderPunchManualBreaks(); saveActiveState();
+  showToast('休憩を削除しました');
+}
+
+function renderPunchManualTotal() {
+  const totalEl = document.getElementById('punch-manual-breaks-total');
+  if (!totalEl) return;
+  const st = getActiveState(); if (!st) return;
+  const breaks = st.manualBreaks || [];
+  if (breaks.length > 0) {
+    const total = breaks.reduce((s, b) => s + (Number(b.mins) || 0), 0);
+    const h = Math.floor(total / 60), m = total % 60;
+    const parts = breaks.map(b => (Number(b.mins)||0) + '分').join(' + ');
+    totalEl.style.display = 'block';
+    totalEl.textContent   = parts + ' ＝ ' + (h > 0 ? h + '時間' : '') + m + '分';
+  } else { totalEl.style.display = 'none'; }
+}
+
+// ============================================================
+// 給油情報
+// ============================================================
+function renderFuels() {
+  const list = document.getElementById('rf-fuels-list'); if (!list) return;
+  const st = getActiveState(); if (!st) return;
+  const fuels = st.fuelEntries || [];
+  if (fuels.length === 0) {
+    list.innerHTML = '<div style="font-size:13px;color:var(--text3);margin-bottom:8px;">給油なし</div>';
+    return;
+  }
+  list.innerHTML = fuels.map((f, i) => `
+    <div class="fuel-row">
+      <div class="fuel-row-header">
+        <span class="fuel-row-num">給油 ${i + 1}</span>
+        <button class="rec-action-btn" onclick="deleteFuel(${i})">削除</button>
+      </div>
+      <div class="fuel-inputs">
+        <div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">数量（L）</div>
+          <input type="text" inputmode="decimal" class="form-input" value="${f.liters||''}"
+            placeholder="0.0" oninput="updateFuel(${i},'liters',this.value)">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">金額（円）</div>
+          <input type="text" inputmode="numeric" class="form-input" value="${f.amount||''}"
+            placeholder="0" oninput="updateFuel(${i},'amount',this.value)">
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function addFuel() {
+  const st = getActiveState(); if (!st) return;
+  if (!st.fuelEntries) st.fuelEntries = [];
+  st.fuelEntries.push({ liters:'', amount:'' });
+  renderFuels(); saveActiveState();
+}
+
+function updateFuel(idx, field, val) {
+  const st = getActiveState(); if (!st || !st.fuelEntries) return;
+  st.fuelEntries[idx][field] = val; saveActiveState();
+}
+
+function deleteFuel(idx) {
+  const st = getActiveState(); if (!st || !st.fuelEntries) return;
+  st.fuelEntries.splice(idx, 1); renderFuels(); saveActiveState();
+  showToast('給油記録を削除しました');
+}
+
+// ============================================================
+// 確認者セレクト構築
+// ============================================================
+function buildCheckerOptions(sel, selectedName) {
+  sel.innerHTML = '<option value="">選択してください</option>';
+  (_checkerCache || []).forEach(c => {
+    const name = typeof c === 'string' ? c : c.name;
+    const opt  = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if (name === selectedName) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+// ============================================================
+// 始業後 運転前酒気帯び確認モーダル
+// ============================================================
+let _alcBStartState = { method:'検知器有', remote:'チャット', result:'無', checker:'', date:'' };
+
+function openAlcBStartModal() {
+  _alcBStartState = { method:'検知器有', remote:'チャット', result:'無', checker:'', date:'' };
+  ['検知器有','検知器無し'].forEach(v => {
+    const b = document.getElementById('alcBStartMethod_' + v);
+    if (b) b.className = 'chip' + (v === '検知器有' ? ' active' : '');
+  });
+  ['','チャット','電話'].forEach(v => {
+    const b = document.getElementById('alcBStartRemote_' + v);
+    if (b) b.className = 'chip' + (v === 'チャット' ? ' active' : '');
+  });
+  const rN = document.getElementById('alcBStartResult_無');
+  const rH = document.getElementById('alcBStartResult_有');
+  if (rN) rN.className = 'chip active';
+  if (rH) rH.className = 'chip';
+
+  const cb = document.getElementById('alcBStartLodging');
+  if (cb) cb.checked = !!(todayState && todayState.lodging);
+  const lbl = document.getElementById('alcBStartLodgingLabel');
+  if (lbl) lbl.textContent = (todayState && todayState.lodging) ? '宿泊あり ¥5,000' : '宿泊なし';
+
+  const sel = document.getElementById('alcBStartChecker');
+  if (sel) buildCheckerOptions(sel, '');
+
+  const dateRow = document.getElementById('alcBStartDateRow');
+  if (dateRow) dateRow.style.display = 'none';
+
+  const btn = document.getElementById('alcBStartConfirmBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; }
+
+  const addRow = document.getElementById('alcBStartAddRow');
+  if (addRow) addRow.style.display = _adminMode ? 'flex' : 'none';
+
+  document.getElementById('alcBStartModal').classList.add('open');
+}
+
+function closeAlcBStartModal() {
+  document.getElementById('alcBStartModal').classList.remove('open');
+}
+
+function alcBStartSet(field, value) {
+  _alcBStartState[field] = value;
+  if (field === 'method') {
+    ['検知器有','検知器無し'].forEach(v => {
+      const b = document.getElementById('alcBStartMethod_' + v);
+      if (b) b.className = 'chip' + (v === value ? ' active' : '');
+    });
+  } else if (field === 'remote') {
+    ['','チャット','電話'].forEach(v => {
+      const b = document.getElementById('alcBStartRemote_' + v);
+      if (b) b.className = 'chip' + (v === value ? ' active' : '');
+    });
+  } else if (field === 'result') {
+    const rN = document.getElementById('alcBStartResult_無');
+    const rH = document.getElementById('alcBStartResult_有');
+    if (rN) rN.className = value === '無' ? 'chip active' : 'chip';
+    if (rH) rH.className = value === '有' ? 'chip active-danger' : 'chip';
+  }
+}
+
+function alcBStartLodgingChange() {
+  const cb = document.getElementById('alcBStartLodging');
+  if (todayState) todayState.lodging = cb ? cb.checked : false;
+  const lbl = document.getElementById('alcBStartLodgingLabel');
+  if (lbl) lbl.textContent = (todayState && todayState.lodging) ? '宿泊あり ¥5,000' : '宿泊なし';
+  if (todayState) saveTodayState();
+}
+
+function alcBStartCheckerSelect() {
+  const sel = document.getElementById('alcBStartChecker');
+  const val = sel ? sel.value : ''; if (!val) return;
+  _alcBStartState.checker = val;
+  _alcBStartState.date    = new Date().toISOString();
+  const d = new Date(_alcBStartState.date);
+  const pad = n => String(n).padStart(2,'0');
+  const str = d.getFullYear() + '/' + pad(d.getMonth()+1) + '/' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const row  = document.getElementById('alcBStartDateRow');
+  const disp = document.getElementById('alcBStartDateDisplay');
+  if (disp) disp.textContent = str;
+  if (row)  row.style.display = 'block';
+  const btn = document.getElementById('alcBStartConfirmBtn');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  setTimeout(() => {
+    const sheet = document.querySelector('#alcBStartModal .modal-sheet');
+    if (sheet) sheet.scrollTo({ top: sheet.scrollHeight, behavior: 'smooth' });
+  }, 50);
+}
+
+async function alcBStartAddChecker() {
+  const inp = document.getElementById('alcBStartCheckerNew');
+  const name = inp ? inp.value.trim() : ''; if (!name) return;
+  const existing = (_checkerCache || []).map(c => typeof c === 'string' ? c : c.name);
+  if (!existing.includes(name)) {
+    try { await gasPost({ action: 'saveChecker', name }); } catch(e) {}
+    _checkerCache = [...(_checkerCache || []), { id:'', name }];
+    _saveCheckerCache(_checkerCache);
+  }
+  const sel = document.getElementById('alcBStartChecker');
+  if (sel) { buildCheckerOptions(sel, name); sel.value = name; }
+  alcBStartCheckerSelect();
+  if (inp) inp.value = '';
+}
+
+function confirmAlcBStartModal() {
+  if (!_alcBStartState.checker) { showToast('確認者を選択してください', true); return; }
+  if (todayState) {
+    todayState.alcBMethod  = _alcBStartState.method;
+    todayState.alcBRemote  = _alcBStartState.remote;
+    todayState.alcBResult  = _alcBStartState.result;
+    todayState.alcBChecker = _alcBStartState.checker;
+    todayState.alcBDate    = _alcBStartState.date;
+    saveTodayState(); syncToGAS(todayState);
+  }
+  closeAlcBStartModal();
+  showToast('✓ 運転前酒気確認を記録しました');
+  if (_isLodgingDay2AlcB) {
+    _isLodgingDay2AlcB = false;
+    setTimeout(() => { navTo('screen-report'); showToast('📋 2日目の日報を確認してください'); }, 300);
+  }
+}
+
+// ============================================================
+// 宿泊による日付またぎ処理
+// ============================================================
+function startLodgingTransition() {
+  todayState.lodging = true;
+  const day1Key    = todayState.startDate || _realTodayKey();
+  const day1Breaks = todayState.breaks.map((b, idx) =>
+    idx === todayState.breaks.length - 1 ? { ...b, end: null } : { ...b }
+  );
+  const day1Record = { ...todayState, breaks: day1Breaks, end: null, savedAt: new Date().toISOString(), date: day1Key };
+  if (!appData[currentDriverId]) appData[currentDriverId] = {};
+  appData[currentDriverId][day1Key] = day1Record;
+
+  const lastBreak = todayState.breaks[todayState.breaks.length - 1];
+  _lodgingBreakStartTime = lastBreak ? (lastBreak.start || '00:00') : '00:00';
+
+  showToast('1日目の運転後酒気確認をしてください');
+  setTimeout(() => openAlcAModal(day1Record, true), 400);
+}
+
+// ============================================================
+// 到着後 酒気帯び確認モーダル
+// ============================================================
+let _alcASavedRecord = null;
+let _alcAState = { method:'検知器有', remote:'チャット', result:'無', checker:'', date:'' };
+
+function openAlcAModal(savedRecord, isLodgingDay1) {
+  _alcASavedRecord = savedRecord;
+  _isLodgingDay1   = !!isLodgingDay1;
+  _alcAState = { method:'検知器有', remote:'チャット', result:'無', checker:'', date:'' };
+
+  ['検知器有','検知器無し'].forEach(v => {
+    const b = document.getElementById('alcAModalMethod_' + v);
+    if (b) b.className = 'chip' + (v === '検知器有' ? ' active' : '');
+  });
+  ['','チャット','電話'].forEach(v => {
+    const b = document.getElementById('alcAModalRemote_' + v);
+    if (b) b.className = 'chip' + (v === 'チャット' ? ' active' : '');
+  });
+  const aN = document.getElementById('alcAModalResult_無');
+  const aH = document.getElementById('alcAModalResult_有');
+  if (aN) aN.className = 'chip active';
+  if (aH) aH.className = 'chip';
+
+  const sel = document.getElementById('alcAModalChecker');
+  if (sel) buildCheckerOptions(sel, '');
+
+  const dateRow = document.getElementById('alcAModalDateRow');
+  if (dateRow) dateRow.style.display = 'none';
+
+  const addRow = document.getElementById('alcAModalAddRow');
+  if (addRow) addRow.style.display = _adminMode ? 'flex' : 'none';
+
+  document.getElementById('alcAModal').classList.add('open');
+}
+
+function alcAModalSet(field, val) {
+  _alcAState[field] = val;
+  if (field === 'method') {
+    ['検知器有','検知器無し'].forEach(v => {
+      const b = document.getElementById('alcAModalMethod_' + v);
+      if (b) b.className = 'chip' + (v === val ? ' active' : '');
+    });
+  } else if (field === 'remote') {
+    ['','チャット','電話'].forEach(v => {
+      const b = document.getElementById('alcAModalRemote_' + v);
+      if (b) b.className = 'chip' + (v === val ? ' active' : '');
+    });
+  } else if (field === 'result') {
+    const aN = document.getElementById('alcAModalResult_無');
+    const aH = document.getElementById('alcAModalResult_有');
+    if (aN) aN.className = val === '無' ? 'chip active' : 'chip';
+    if (aH) aH.className = val === '有' ? 'chip active-danger' : 'chip';
+  }
+}
+
+function alcAModalCheckerSelect() {
+  const sel = document.getElementById('alcAModalChecker');
+  const val = sel ? sel.value : ''; if (!val) return;
+  _alcAState.checker = val;
+  _alcAState.date    = new Date().toISOString();
+  const d = new Date(_alcAState.date);
+  const pad = n => String(n).padStart(2,'0');
+  const str = d.getFullYear() + '/' + pad(d.getMonth()+1) + '/' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const row  = document.getElementById('alcAModalDateRow');
+  const disp = document.getElementById('alcAModalDateDisplay');
+  if (disp) disp.textContent = str;
+  if (row)  row.style.display = 'block';
+  setTimeout(() => {
+    const sheet = document.querySelector('#alcAModal .modal-sheet');
+    if (sheet) sheet.scrollTo({ top: sheet.scrollHeight, behavior: 'smooth' });
+  }, 50);
+}
+
+async function alcAModalAddChecker() {
+  const inp = document.getElementById('alcAModalCheckerNew');
+  const name = inp ? inp.value.trim() : ''; if (!name) return;
+  const existing = (_checkerCache || []).map(c => typeof c === 'string' ? c : c.name);
+  if (!existing.includes(name)) {
+    try { await gasPost({ action: 'saveChecker', name }); } catch(e) {}
+    _checkerCache = [...(_checkerCache || []), { id:'', name }];
+    _saveCheckerCache(_checkerCache);
+  }
+  const sel = document.getElementById('alcAModalChecker');
+  if (sel) { buildCheckerOptions(sel, name); sel.value = name; }
+  alcAModalCheckerSelect();
+  if (inp) inp.value = '';
+}
+
+function confirmAlcAModal() {
+  if (!_alcAState.checker) { showToast('確認者を選択してください', true); return; }
+  if (_alcASavedRecord) {
+    Object.assign(_alcASavedRecord, {
+      alcAMethod: _alcAState.method, alcARemote: _alcAState.remote,
+      alcAResult: _alcAState.result, alcAChecker: _alcAState.checker, alcADate: _alcAState.date,
+    });
+    const dateKey2 = _alcASavedRecord.startDate || _alcASavedRecord.date;
+    if (dateKey2 && appData[currentDriverId]?.[dateKey2]) {
+      Object.assign(appData[currentDriverId][dateKey2], {
+        alcAMethod: _alcAState.method, alcARemote: _alcAState.remote,
+        alcAResult: _alcAState.result, alcAChecker: _alcAState.checker, alcADate: _alcAState.date,
+      });
+    }
+  }
+  document.getElementById('alcAModal').classList.remove('open');
+
+  if (_isLodgingDay1) {
+    const day1SaveRecord = _alcASavedRecord;
+    _alcASavedRecord = null; _isLodgingDay1 = false;
+    _lodgingDay1Date = day1SaveRecord ? (day1SaveRecord.startDate || day1SaveRecord.date) : _realTodayKey();
+    autoSaveRecord(day1SaveRecord);
+    setTimeout(() => {
+      const d = new Date(_lodgingDay1Date + 'T00:00:00');
+      d.setDate(d.getDate() + 1);
+      const day2Date = dateKey(d);
+      todayState = Object.assign(defaultTodayState(), {
+        start: '00:00', end: null, startDate: day2Date,
+        breaks: [{ start: _lodgingBreakStartTime, end: null, place: '宿泊（就寝）' }],
+      });
+      saveTodayState(); updatePunchUI();
+      _waitingLodgingDay2 = true;
+      showToast('✓ 1日目完了。休憩終了を打刻してください');
+    }, 500);
+  } else {
+    const printDate = _alcASavedRecord ? (_alcASavedRecord.startDate || _alcASavedRecord.date || todayKey()) : todayKey();
+    showToast('✓ お疲れ様でした！記録を保存しました');
+    autoSaveRecord(_alcASavedRecord);
+    _alcASavedRecord = null;
+    setTimeout(() => openConfirm('日報を確認しますか？', printDate + ' の日報を開きます', () => navTo('screen-report'), '日報を見る', false), 400);
+  }
+}
+
+function openAlcBForNewDay() {
+  const last = todayState.breaks[todayState.breaks.length - 1];
+  if (last && !last.end) last.end = _lodgingBreakEndTime;
+  saveTodayState(); syncToGAS(todayState); updatePunchUI();
+  _isLodgingDay2AlcB = true;
+  setTimeout(() => openAlcBStartModal(), 400);
 }
 
 init();
