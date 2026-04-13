@@ -326,6 +326,129 @@
     }
 
     /* ============================================================
+       画面3: メイン打刻
+       ============================================================ */
+    .main-header-name {
+      font-size: 24px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .main-header-date {
+      font-size: 15px;
+      color: var(--text2);
+      text-align: center;
+      margin-top: 4px;
+    }
+
+    /* ステータスカード */
+    .status-card {
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      text-align: center;
+      margin-bottom: 24px;
+      border: 2px solid var(--border);
+      background: var(--surface);
+    }
+    .status-card.working { background: #052e16; border-color: var(--success); }
+    .status-card.done    { background: #0c1a35; border-color: var(--accent); }
+
+    .status-badge {
+      display: inline-block;
+      padding: 6px 22px;
+      border-radius: 999px;
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 14px;
+    }
+    .status-card.none    .status-badge { background: var(--surface2); color: var(--text2); }
+    .status-card.working .status-badge { background: var(--success);  color: #fff; }
+    .status-card.done    .status-badge { background: var(--accent);   color: #fff; }
+
+    .status-times {
+      font-size: 16px;
+      color: var(--text2);
+      line-height: 2.2;
+    }
+    .status-times strong { color: var(--text); font-size: 18px; }
+
+    /* 打刻ボタン */
+    .action-btn {
+      display: block;
+      width: 100%;
+      border: none;
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-weight: bold;
+      cursor: pointer;
+      min-height: 84px;
+      font-size: 28px;
+      margin-bottom: 14px;
+      transition: opacity 0.15s, transform 0.1s;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .action-btn:active { transform: scale(0.97); }
+    .action-btn.clock-in   { background: linear-gradient(135deg, #15803d, #22c55e); color: #fff; }
+    .action-btn.clock-out  { background: linear-gradient(135deg, #b91c1c, #ef4444); color: #fff; }
+    .action-btn.alco-check { background: linear-gradient(135deg, #1d4ed8, #60a5fa); color: #fff; }
+
+    .done-msg {
+      text-align: center;
+      color: var(--text2);
+      font-size: 18px;
+      padding: 20px 0 8px;
+    }
+
+    /* アルコールチェック入力モーダル */
+    #alco-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 310;
+      display: flex;
+      align-items: flex-end;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    #alco-overlay.open { opacity: 1; pointer-events: auto; }
+    #alco-sheet {
+      background: var(--surface);
+      border-radius: 20px 20px 0 0;
+      padding: 28px 24px 44px;
+      width: 100%;
+      transform: translateY(40px);
+      transition: transform 0.25s;
+    }
+    #alco-overlay.open #alco-sheet { transform: translateY(0); }
+    .alco-title {
+      font-size: 20px;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .alco-unit {
+      text-align: center;
+      font-size: 14px;
+      color: var(--text2);
+      margin-bottom: 8px;
+    }
+    #alco-input {
+      width: 100%;
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 52px;
+      font-weight: bold;
+      text-align: center;
+      padding: 16px;
+      margin-bottom: 20px;
+      font-family: inherit;
+    }
+    #alco-input:focus { outline: none; border-color: var(--accent); }
+
+    /* ============================================================
        画面2〜5: 準備中プレースホルダー
        ============================================================ */
     .placeholder-box {
@@ -372,6 +495,20 @@
 <div id="loading-overlay">
   <div class="spinner"></div>
   <div id="loading-msg">読み込み中...</div>
+</div>
+
+<!-- アルコールチェック値入力モーダル -->
+<div id="alco-overlay">
+  <div id="alco-sheet">
+    <div class="alco-title">アルコール検査値を入力</div>
+    <div class="alco-unit">単位: mg/L（0.00 が正常）</div>
+    <input id="alco-input" type="number" step="0.01" min="0" max="9.99"
+           inputmode="decimal" placeholder="0.00">
+    <button class="btn btn-primary" onclick="confirmAlcoCheck()" style="margin-bottom:12px;">
+      記録する
+    </button>
+    <button class="btn btn-secondary" onclick="closeAlcoModal()">キャンセル</button>
+  </div>
 </div>
 
 <!-- ============================================================
@@ -441,15 +578,33 @@
 </div>
 
 <!-- ============================================================
-     画面3: メイン打刻画面（PHASE 2以降で実装）
+     画面3: メイン打刻
      ============================================================ -->
 <div id="screen-main" class="screen">
   <div class="page-header">
-    <h1>打刻</h1>
+    <div id="main-header-name" class="main-header-name"></div>
+    <div id="main-header-date" class="main-header-date"></div>
   </div>
-  <div class="placeholder-box">
-    <div>この画面は次のフェーズで実装します</div>
-    <button class="back-btn" onclick="showScreen('screen-select')">もどる</button>
+  <div class="content">
+
+    <!-- ステータスカード -->
+    <div id="main-status-card" class="status-card none">
+      <div class="status-badge">読み込み中...</div>
+    </div>
+
+    <!-- 打刻ボタンエリア（状態に応じて切り替え） -->
+    <div id="action-area"></div>
+
+    <!-- 日報入力へ -->
+    <button class="btn btn-secondary" onclick="goReport()" style="margin-top:8px;">
+      日報入力
+    </button>
+
+  </div>
+  <div class="page-footer">
+    <button class="btn btn-ghost" style="width:auto;padding:12px 28px;font-size:16px;" onclick="logout()">
+      ログアウト
+    </button>
   </div>
 </div>
 
@@ -489,6 +644,7 @@
 const state = {
   drivers:       [],
   currentDriver: null,
+  todayRecord:   null,
 };
 
 // ============================================================
@@ -597,9 +753,168 @@ function goAdminLogin() {
   showScreen('screen-admin');
 }
 
-// 画面3（メイン打刻）へ遷移 — 実装は次フェーズ
+// ============================================================
+// 画面3: メイン打刻
+// ============================================================
 function enterMainScreen() {
+  // ヘッダーにドライバー名と日付をセット
+  document.getElementById('main-header-name').textContent = state.currentDriver.name;
+  document.getElementById('main-header-date').textContent = formatDateJP(new Date());
   showScreen('screen-main');
+  loadMainStatus();
+}
+
+async function loadMainStatus() {
+  try {
+    const res = await gasPost('getStatus', { driverId: state.currentDriver.id });
+    state.todayRecord = res.record;
+    renderMainScreen(res.status, res.record);
+  } catch (err) {
+    showToast('状態の取得に失敗しました', true);
+  }
+}
+
+function renderMainScreen(status, record) {
+  const card   = document.getElementById('main-status-card');
+  const action = document.getElementById('action-area');
+
+  // ステータスカードの色クラスを切り替え
+  card.className = 'status-card ' + status;
+
+  let badgeText = { none: '未打刻', working: '出勤中', done: '退勤済み' }[status] || '不明';
+  let detailHTML = '';
+
+  if (status === 'none') {
+    detailHTML = '<div style="color:var(--text2);font-size:16px;margin-top:4px;">本日の出勤打刻がありません</div>';
+  } else if (status === 'working' && record) {
+    const alc = record.alcoholCheck;
+    detailHTML = `<div class="status-times">
+      出勤: <strong>${record.clockIn}</strong><br>
+      ${alc
+        ? `アルコール: <strong>${Number(alc.value).toFixed(2)} mg/L</strong>（${alc.result === 'pass' ? '正常' : '検知'}）`
+        : 'アルコール: <strong style="color:var(--warning);">未記録</strong>'}
+    </div>`;
+  } else if (status === 'done' && record) {
+    const alc = record.alcoholCheck;
+    detailHTML = `<div class="status-times">
+      出勤: <strong>${record.clockIn}</strong><br>
+      退勤: <strong>${record.clockOut}</strong><br>
+      ${alc
+        ? `アルコール: <strong>${Number(alc.value).toFixed(2)} mg/L</strong>（${alc.result === 'pass' ? '正常' : '検知'}）`
+        : ''}
+    </div>`;
+  }
+
+  card.innerHTML = `<div class="status-badge">${badgeText}</div>${detailHTML}`;
+
+  // アクションボタンを状態で切り替え
+  if (status === 'none') {
+    action.innerHTML = `
+      <button class="action-btn clock-in" onclick="confirmClockIn()">出勤打刻</button>`;
+  } else if (status === 'working') {
+    action.innerHTML = `
+      <button class="action-btn alco-check" onclick="openAlcoModal()">アルコールチェック</button>
+      <button class="action-btn clock-out"  onclick="confirmClockOut()">退勤打刻</button>`;
+  } else {
+    action.innerHTML = `<div class="done-msg">本日の打刻は完了しています</div>`;
+  }
+}
+
+function formatDateJP(d) {
+  const week = ['日','月','火','水','木','金','土'];
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${week[d.getDay()]}）`;
+}
+
+// ── 出勤打刻 ──
+function confirmClockIn() {
+  openConfirm(
+    '出勤打刻',
+    '出勤を記録します。よろしいですか？',
+    async () => {
+      try {
+        showLoading('打刻中...');
+        await gasPost('clockIn', { driverId: state.currentDriver.id });
+        hideLoading();
+        showToast('出勤打刻しました');
+        await loadMainStatus();
+      } catch (err) {
+        hideLoading();
+        showToast(err.message, true);
+      }
+    }
+  );
+}
+
+// ── 退勤打刻 ──
+function confirmClockOut() {
+  openConfirm(
+    '退勤打刻',
+    '退勤を記録します。よろしいですか？',
+    async () => {
+      try {
+        showLoading('打刻中...');
+        await gasPost('clockOut', { driverId: state.currentDriver.id });
+        hideLoading();
+        showToast('退勤打刻しました');
+        await loadMainStatus();
+      } catch (err) {
+        hideLoading();
+        showToast(err.message, true);
+      }
+    }
+  );
+}
+
+// ── アルコールチェック ──
+function openAlcoModal() {
+  document.getElementById('alco-input').value = '';
+  document.getElementById('alco-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('alco-input').focus(), 300);
+}
+
+function closeAlcoModal() {
+  document.getElementById('alco-overlay').classList.remove('open');
+}
+
+function confirmAlcoCheck() {
+  const raw = document.getElementById('alco-input').value.trim();
+  if (raw === '') { showToast('検査値を入力してください', true); return; }
+  const num = parseFloat(raw);
+  if (isNaN(num) || num < 0) { showToast('正しい数値を入力してください', true); return; }
+
+  closeAlcoModal();
+  const label = num === 0
+    ? `0.00 mg/L（正常）`
+    : `${num.toFixed(2)} mg/L（検知あり）`;
+
+  openConfirm(
+    'アルコールチェック記録',
+    `検査値: ${label}\nこの内容で記録しますか？`,
+    async () => {
+      try {
+        showLoading('記録中...');
+        await gasPost('alcoholCheck', { driverId: state.currentDriver.id, value: num });
+        hideLoading();
+        showToast('アルコールチェックを記録しました');
+        await loadMainStatus();
+      } catch (err) {
+        hideLoading();
+        showToast(err.message, true);
+      }
+    }
+  );
+}
+
+// ── ログアウト ──
+function logout() {
+  state.currentDriver = null;
+  state.todayRecord   = null;
+  showScreen('screen-select');
+}
+
+// ── 日報入力へ ──
+function goReport() {
+  showScreen('screen-report');
 }
 
 // ============================================================
