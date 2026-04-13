@@ -1,0 +1,6 @@
+config.js
+config.gs
+.env
+.env.*
+*.key
+*.pem
