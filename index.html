@@ -678,6 +678,31 @@ html, body {
   width: 100%;
   margin-top: 8px;
 }
+.rf-row { margin-bottom: 12px; }
+.rf-label { font-size: 13px; color: var(--text3); margin-bottom: 4px; font-weight: 600; }
+.rf-input {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 15px;
+  padding: 12px 14px; font-family: inherit; box-sizing: border-box;
+}
+.rf-input:focus { outline: none; border-color: var(--accent); }
+.rf-input::placeholder { color: var(--text3); }
+.rf-num { text-align: center; padding: 10px 6px; }
+.rf-num-group { display: flex; flex-direction: column; gap: 4px; }
+.rf-num-group label { font-size: 12px; color: var(--text3); text-align: center; }
+.rf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 4px; }
+.rf-count-badge { font-size: 13px; color: var(--accent); font-weight: 700; }
+.rf-multi-card { background: var(--surface2); border-radius: var(--radius-sm); border: 1px solid var(--border); padding: 12px; margin-bottom: 8px; }
+.rf-multi-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: var(--text2); font-weight: 700; }
+.rf-textarea { min-height: 80px; resize: vertical; padding: 12px 14px; line-height: 1.6; }
+.rf-save-indicator { text-align: center; font-size: 13px; color: var(--success); padding: 8px 0; }
+.rf-alc-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.rf-alc-row:last-child { border-bottom: none; }
+.rf-alc-label { font-size: 12px; color: var(--text3); width: 54px; flex-shrink: 0; }
+.rf-alc-val { font-size: 13px; color: var(--text); flex: 1; }
+.rf-day2-banner { background: #1a3a5c; border: 1px solid #2E75B6; border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; }
+.rf-day2-banner-title { color: #BDD7EE; font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+.rf-day2-banner-body { color: #90b8d8; font-size: 13px; line-height: 1.6; }
 
 /* ============================================================
    月次集計
@@ -1012,7 +1037,80 @@ html, body {
     </button>
   </div>
   <div class="content" id="report-content">
-    <div class="empty-state">日報入力を読み込み中...</div>
+
+    <!-- 宿泊2日目バナー -->
+    <div id="rf-day2-banner" class="rf-day2-banner" style="display:none;">
+      <div class="rf-day2-banner-title">🌙 宿泊翌日の入力</div>
+      <div class="rf-day2-banner-body">運転前の酒気帯び確認のみ入力してください。<br>配送情報・積込は1日目の記録に含まれます。</div>
+      <button class="btn btn-ghost btn-full mt-16" onclick="viewDay1Report()" style="border-color:#2E75B6;color:#BDD7EE;">📋 1日目の日報を確認</button>
+    </div>
+
+    <!-- 打刻サマリー（読み取り専用） -->
+    <div class="rf-section" style="padding:12px 16px;margin-bottom:12px;">
+      <div id="rf-date-label" style="font-size:13px;color:var(--text3);margin-bottom:4px;">—</div>
+      <div id="rf-clock-label" style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;color:var(--text);">—</div>
+      <div id="rf-alc-summary" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- 配送情報・積込・出張報告書（宿泊2日目は非表示） -->
+    <div id="rf-day1-sections">
+
+      <!-- 配送情報 -->
+      <div class="rf-section">
+        <div class="rf-label" style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px;">配送情報</div>
+        <div class="rf-row">
+          <div class="rf-label">配送地</div>
+          <input class="rf-input" id="rf-destination" type="text" placeholder="例: 兵庫・岡山" oninput="reportFieldChange()">
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div class="rf-label" style="margin:0;">訪問先 <span class="rf-count-badge" id="rf-count-display">0件</span></div>
+          <button class="rf-add-btn" style="width:auto;margin-top:0;" onclick="reportAddVisit()">＋ 追加</button>
+        </div>
+        <div id="rf-visits-list"></div>
+      </div>
+
+      <!-- 積込数量 -->
+      <div class="rf-section">
+        <div class="rf-label" style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px;">積込数量</div>
+        <div class="rf-grid">
+          <div class="rf-num-group"><label>完成</label><input class="rf-input rf-num" id="rf-kumitate" inputmode="numeric" placeholder="0" oninput="reportFieldChange()"></div>
+          <div class="rf-num-group"><label>バラ</label><input class="rf-input rf-num" id="rf-bara" inputmode="numeric" placeholder="0" oninput="reportFieldChange()"></div>
+          <div class="rf-num-group"><label>ワンタッチ</label><input class="rf-input rf-num" id="rf-onetouch" inputmode="numeric" placeholder="0" oninput="reportFieldChange()"></div>
+          <div class="rf-num-group"><label>小物</label><input class="rf-input rf-num" id="rf-kobutsu" inputmode="numeric" placeholder="0" oninput="reportFieldChange()"></div>
+          <div class="rf-num-group"><label>その他</label><input class="rf-input rf-num" id="rf-other" inputmode="numeric" placeholder="0" oninput="reportFieldChange()"></div>
+        </div>
+      </div>
+
+      <!-- 出張報告書 -->
+      <div class="rf-section">
+        <div class="rf-label" style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px;">出張報告書</div>
+        <div class="toggle-row" style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);">
+          <span class="rf-label" style="margin:0;">宿泊手当（¥5,000）</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="rf-lodging-check" onchange="reportLodgingChange()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div class="rf-label" style="margin:0;">受取手当</div>
+          <button class="rf-add-btn" style="width:auto;margin-top:0;" onclick="reportAddAllowance()">＋ 追加</button>
+        </div>
+        <div id="rf-allowances-list"></div>
+        <div class="rf-row" style="margin-top:8px;">
+          <div class="rf-label">手当（不足分）</div>
+          <input class="rf-input rf-num" id="rf-allowance-shortfall" inputmode="decimal" placeholder="金額" style="text-align:right;" oninput="reportFieldChange()">
+        </div>
+        <div class="rf-row">
+          <div class="rf-label">手当（受取超過分）</div>
+          <input class="rf-input rf-num" id="rf-allowance-excess" inputmode="decimal" placeholder="金額" style="text-align:right;" oninput="reportFieldChange()">
+        </div>
+      </div>
+
+    </div><!-- /#rf-day1-sections -->
+
+    <div class="rf-save-indicator" id="rfSaveIndicator" style="display:none;">✓ 自動保存しました</div>
+    <div style="height:80px;"></div>
+
   </div>
 </div>
 
@@ -1028,7 +1126,9 @@ html, body {
     </button>
   </div>
   <div class="content" id="horeport-content">
-    <div class="empty-state">報告事項を読み込み中...</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:12px;">訪問先は日報タブで追加できます</div>
+    <div id="rf-reports-list"></div>
+    <div style="height:80px;"></div>
   </div>
 </div>
 
@@ -1164,6 +1264,17 @@ html, body {
       <button class="modal-btn cancel" onclick="document.getElementById('alcAModal').classList.remove('open')">後で</button>
       <button class="modal-btn confirm" onclick="confirmAlcAModal()">確定</button>
     </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     1日目日報確認モーダル（宿泊翌日用）
+     ============================================================ -->
+<div class="modal-overlay" id="day1ReportModal" style="z-index:400;">
+  <div class="modal-sheet" style="max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+    <div class="modal-title">📋 1日目の日報</div>
+    <div id="day1ReportContent" style="font-size:14px;color:var(--text);line-height:1.8;"></div>
+    <button class="btn btn-ghost btn-full mt-16" onclick="document.getElementById('day1ReportModal').classList.remove('open')">閉じる</button>
   </div>
 </div>
 
@@ -1744,6 +1855,250 @@ async function deleteRecordCard(date) {
 }
 
 // ============================================================
+// 日報フォーム（Part 4）
+// ============================================================
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+const RF_FIELDS = ['destination','kumitate','bara','onetouch','kobutsu','other','allowanceShortfall','allowanceExcess'];
+
+let rfSaveTimer = null;
+
+function showRfSaved() {
+  const el = document.getElementById('rfSaveIndicator');
+  if (!el) return;
+  el.style.display = 'block';
+  clearTimeout(rfSaveTimer);
+  rfSaveTimer = setTimeout(() => { el.style.display = 'none'; }, 2000);
+}
+
+function setReportDay2Mode(isDay2) {
+  const banner   = document.getElementById('rf-day2-banner');
+  const day1Secs = document.getElementById('rf-day1-sections');
+  if (banner)   banner.style.display   = isDay2 ? 'block' : 'none';
+  if (day1Secs) day1Secs.style.display = isDay2 ? 'none'  : 'block';
+}
+
+function renderReportForm() {
+  if (_postEndState && todayState && !todayState.start && _postEndDate && _postEndDate !== _realTodayKey()) {
+    _postEndState = null; _postEndDate = null;
+    updatePunchUI();
+  }
+
+  const st   = getActiveState();
+  const date = st.startDate || st.date || todayKey();
+
+  // 日付ラベル
+  const dateEl = document.getElementById('rf-date-label');
+  if (dateEl) dateEl.textContent = formatDateLabel(date);
+
+  // 打刻サマリー
+  const clockEl = document.getElementById('rf-clock-label');
+  if (clockEl) {
+    const ci = st.start || '—';
+    const co = st.end   || '—';
+    clockEl.textContent = ci + ' → ' + co;
+  }
+
+  // アルコールチェックサマリー
+  const alcEl = document.getElementById('rf-alc-summary');
+  if (alcEl) {
+    const rows = [];
+    if (st.alcBDate) {
+      const d = new Date(st.alcBDate);
+      const pad = n => String(n).padStart(2,'0');
+      const ts = pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+      rows.push(`<div class="rf-alc-row"><span class="rf-alc-label">運転前</span><span class="rf-alc-val">${ts} ${escHtml(st.alcBChecker)} <span style="color:${st.alcBResult==='有'?'var(--danger)':'var(--success)'};">${st.alcBResult||''}</span></span></div>`);
+    }
+    if (st.alcADate) {
+      const d = new Date(st.alcADate);
+      const pad = n => String(n).padStart(2,'0');
+      const ts = pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+      rows.push(`<div class="rf-alc-row"><span class="rf-alc-label">到着後</span><span class="rf-alc-val">${ts} ${escHtml(st.alcAChecker)} <span style="color:${st.alcAResult==='有'?'var(--danger)':'var(--success)'};">${st.alcAResult||''}</span></span></div>`);
+    }
+    alcEl.innerHTML = rows.join('');
+  }
+
+  // 宿泊トグル
+  const lodgingCheck = document.getElementById('rf-lodging-check');
+  if (lodgingCheck) lodgingCheck.checked = !!st.lodging;
+
+  // テキスト/数値フィールド復元
+  RF_FIELDS.forEach(key => {
+    const el = document.getElementById('rf-' + key);
+    if (el) el.value = st[key] || '';
+  });
+
+  // 動的リスト
+  renderReportVisits();
+  renderReportAllowances();
+
+  // 宿泊2日目モード
+  setReportDay2Mode(!!_waitingLodgingDay2);
+}
+
+function reportFieldChange() {
+  const st = getActiveState();
+  RF_FIELDS.forEach(key => {
+    const el = document.getElementById('rf-' + key);
+    if (el) st[key] = el.value;
+  });
+  saveActiveState();
+  clearTimeout(rfSaveTimer);
+  rfSaveTimer = setTimeout(showRfSaved, 800);
+}
+
+function reportLodgingChange() {
+  const st  = getActiveState();
+  const chk = document.getElementById('rf-lodging-check');
+  if (chk) { st.lodging = chk.checked; saveActiveState(); }
+}
+
+// ── 訪問先 ──
+function renderReportVisits() {
+  const list = document.getElementById('rf-visits-list');
+  const countEl = document.getElementById('rf-count-display');
+  if (!list) return;
+  const st     = getActiveState();
+  const visits = st.visits || [];
+  if (countEl) countEl.textContent = visits.length + '件';
+
+  if (visits.length === 0) { list.innerHTML = ''; return; }
+
+  list.innerHTML = visits.map((v, i) => `<div class="rf-multi-card">
+    <div class="rf-multi-card-header">
+      <span>訪問先 ${i + 1}</span>
+      <button class="rf-del-btn" onclick="reportRemoveVisit(${i})">× 削除</button>
+    </div>
+    <input class="rf-input" type="text" placeholder="会社名" value="${escHtml(v.place||'')}"
+      data-vi="${i}" data-vf="place" oninput="handleReportVisitInput(this)" style="margin-bottom:6px;">
+  </div>`).join('');
+}
+
+function reportAddVisit() {
+  const st = getActiveState();
+  if (!st.visits) st.visits = [];
+  st.visits.push({ place: '', report: '' });
+  saveActiveState();
+  renderReportVisits();
+  renderHoReport();
+}
+
+function reportRemoveVisit(i) {
+  const st = getActiveState();
+  if (!st.visits) return;
+  st.visits.splice(i, 1);
+  saveActiveState();
+  renderReportVisits();
+  renderHoReport();
+}
+
+function handleReportVisitInput(el) {
+  const st = getActiveState();
+  if (!st.visits) return;
+  const i = parseInt(el.dataset.vi);
+  const f = el.dataset.vf;
+  if (st.visits[i]) { st.visits[i][f] = el.value; saveActiveState(); }
+  if (f === 'place') renderHoReport();
+}
+
+// ── 受取手当 ──
+function renderReportAllowances() {
+  const list = document.getElementById('rf-allowances-list');
+  if (!list) return;
+  const st = getActiveState();
+  const allowances = st.allowances || [];
+
+  if (allowances.length === 0) { list.innerHTML = ''; return; }
+
+  list.innerHTML = allowances.map((a, i) => `<div class="rf-multi-card">
+    <div class="rf-multi-card-header">
+      <span>受取手当 ${i + 1}</span>
+      <button class="rf-del-btn" onclick="reportRemoveAllowance(${i})">× 削除</button>
+    </div>
+    <input class="rf-input rf-num" type="text" inputmode="decimal" placeholder="金額"
+      value="${escHtml(String(a.amount !== undefined ? a.amount : ''))}"
+      data-ai="${i}" oninput="handleReportAllowanceInput(this)" style="text-align:right;">
+  </div>`).join('');
+}
+
+function reportAddAllowance() {
+  const st = getActiveState();
+  if (!st.allowances) st.allowances = [];
+  st.allowances.push({ amount: '' });
+  saveActiveState();
+  renderReportAllowances();
+}
+
+function reportRemoveAllowance(i) {
+  const st = getActiveState();
+  if (!st.allowances) return;
+  st.allowances.splice(i, 1);
+  saveActiveState();
+  renderReportAllowances();
+}
+
+function handleReportAllowanceInput(el) {
+  const st = getActiveState();
+  if (!st.allowances) return;
+  const i = parseInt(el.dataset.ai);
+  if (st.allowances[i]) { st.allowances[i].amount = el.value; saveActiveState(); }
+}
+
+// ── 1日目確認（宿泊2日目用） ──
+function viewDay1Report() {
+  if (!_lodgingDay1Date) { showToast('1日目の記録が見つかりません', true); return; }
+  const rec = (appData[currentDriverId] || {})[_lodgingDay1Date] || {};
+  const pad = n => String(n).padStart(2,'0');
+  const fmtAlc = side => {
+    const dt = rec['alc' + side + 'Date'];
+    if (!dt) return '—';
+    const d = new Date(dt);
+    return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${escHtml(rec['alc'+side+'Checker']||'')} (${rec['alc'+side+'Result']||''})`;
+  };
+  const content = document.getElementById('day1ReportContent');
+  if (content) {
+    content.innerHTML = `
+      <div style="margin-bottom:8px;"><strong>日付</strong>: ${escHtml(_lodgingDay1Date)}</div>
+      <div style="margin-bottom:8px;"><strong>始業→到着</strong>: ${escHtml(rec.start||'—')} → ${escHtml(rec.end||'—')}</div>
+      <div style="margin-bottom:8px;"><strong>運転前確認</strong>: ${fmtAlc('B')}</div>
+      <div style="margin-bottom:8px;"><strong>配送地</strong>: ${escHtml(rec.destination||'—')}</div>
+      <div style="margin-bottom:8px;"><strong>宿泊</strong>: ${rec.lodging ? 'あり' : 'なし'}</div>`;
+  }
+  document.getElementById('day1ReportModal').classList.add('open');
+}
+
+// ── 報告事項（horeport） ──
+function renderHoReport() {
+  const list = document.getElementById('rf-reports-list');
+  if (!list) return;
+  const st     = getActiveState();
+  const visits = st.visits || [];
+
+  if (visits.length === 0) {
+    list.innerHTML = '<div class="empty-state" style="padding:30px 0;">訪問先を日報タブで追加してください</div>';
+    return;
+  }
+
+  list.innerHTML = visits.map((v, i) => {
+    const label = v.place || ('訪問先 ' + (i + 1));
+    return `<div class="rf-multi-card">
+      <div class="rf-multi-card-header">${escHtml(label)}</div>
+      <textarea class="rf-input rf-textarea" placeholder="報告事項を入力"
+        data-vi="${i}" data-vf="report" oninput="handleHoReportInput(this)">${escHtml(v.report||'')}</textarea>
+    </div>`;
+  }).join('');
+}
+
+function handleHoReportInput(el) {
+  const st = getActiveState();
+  if (!st.visits) return;
+  const i = parseInt(el.dataset.vi);
+  if (st.visits[i]) { st.visits[i].report = el.value; saveActiveState(); }
+}
+
+// ============================================================
 // 管理者キー入力
 // ============================================================
 async function submitAdminKey() {
@@ -1858,6 +2213,8 @@ function defaultTodayState() {
     type: 'normal', note: '', lodging: false, fuelEntries: [],
     alcBDate:'', alcBMethod:'検知器有', alcBRemote:'チャット', alcBResult:'無', alcBChecker:'',
     alcADate:'', alcAMethod:'検知器有', alcARemote:'チャット', alcAResult:'無', alcAChecker:'',
+    destination: '', kumitate: '', bara: '', onetouch: '', kobutsu: '', other: '',
+    visits: [], allowances: [], allowanceShortfall: '', allowanceExcess: '',
   };
 }
 
@@ -1912,28 +2269,42 @@ function saveActiveState() {
 // ============================================================
 function buildRecord(state) {
   return {
-    action:       'saveRecord',
-    driverId:     state.driverId || currentDriverId,
-    driverName:   getDriverName(state.driverId || currentDriverId),
-    date:         state.startDate || state.date || todayKey(),
-    clockIn:      state.start       || '',
-    clockOut:     state.end         || '',
-    status:       state.end ? 'done' : state.start ? 'working' : 'none',
-    destination:  state.destination  || '',
-    note:         state.note         || '',
-    startMileage: state.startMileage || '',
-    endMileage:   state.endMileage   || '',
-    lodging:      state.lodging ? 1 : 0,
-    alcBMethod:   state.alcBMethod   || '',
-    alcBRemote:   state.alcBRemote   || '',
-    alcBResult:   state.alcBResult   || '',
-    alcBChecker:  state.alcBChecker  || '',
-    alcBDate:     state.alcBDate     || '',
-    alcAMethod:   state.alcAMethod   || '',
-    alcARemote:   state.alcARemote   || '',
-    alcAResult:   state.alcAResult   || '',
-    alcAChecker:  state.alcAChecker  || '',
-    alcADate:     state.alcADate     || '',
+    action:              'saveRecord',
+    driverId:            state.driverId    || currentDriverId,
+    driverName:          getDriverName(state.driverId || currentDriverId),
+    date:                state.startDate   || state.date || todayKey(),
+    clockIn:             state.start       || '',
+    clockOut:            state.end         || '',
+    status:              state.end ? 'done' : state.start ? 'working' : 'none',
+    breaks:              state.breaks      || [],
+    manualBreaks:        state.manualBreaks || [],
+    fuelEntries:         state.fuelEntries || [],
+    destination:         state.destination || '',
+    note:                state.note        || '',
+    startMileage:        state.startMileage || '',
+    endMileage:          state.endMileage  || '',
+    startPlace:          state.startPlace  || '',
+    endPlace:            state.endPlace    || '',
+    lodging:             state.lodging ? 1 : 0,
+    kumitate:            state.kumitate    || '',
+    bara:                state.bara        || '',
+    onetouch:            state.onetouch    || '',
+    kobutsu:             state.kobutsu     || '',
+    other:               state.other       || '',
+    visits:              state.visits      || [],
+    allowances:          state.allowances  || [],
+    allowanceShortfall:  state.allowanceShortfall || '',
+    allowanceExcess:     state.allowanceExcess    || '',
+    alcBMethod:          state.alcBMethod  || '',
+    alcBRemote:          state.alcBRemote  || '',
+    alcBResult:          state.alcBResult  || '',
+    alcBChecker:         state.alcBChecker || '',
+    alcBDate:            state.alcBDate    || '',
+    alcAMethod:          state.alcAMethod  || '',
+    alcARemote:          state.alcARemote  || '',
+    alcAResult:          state.alcAResult  || '',
+    alcAChecker:         state.alcAChecker || '',
+    alcADate:            state.alcADate    || '',
   };
 }
 
