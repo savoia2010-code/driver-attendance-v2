@@ -449,6 +449,96 @@
     #alco-input:focus { outline: none; border-color: var(--accent); }
 
     /* ============================================================
+       画面4: 日報入力
+       ============================================================ */
+    .report-section {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: 14px;
+      font-weight: bold;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .form-row { margin-bottom: 16px; }
+    .form-row:last-child { margin-bottom: 0; }
+    .form-label {
+      display: block;
+      font-size: 15px;
+      color: var(--text2);
+      margin-bottom: 6px;
+    }
+    .form-input, .form-select {
+      width: 100%;
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 20px;
+      padding: 13px 16px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-input:focus, .form-select:focus { outline: none; border-color: var(--accent); }
+    .form-select { cursor: pointer; }
+    .form-input[readonly] { background: var(--bg); color: var(--text2); }
+    textarea.form-input { resize: vertical; min-height: 80px; line-height: 1.5; }
+    .form-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .alco-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+    .alco-heading {
+      font-size: 17px;
+      font-weight: bold;
+      margin-bottom: 14px;
+      color: var(--text);
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0 16px;
+    }
+    .toggle-label { font-size: 20px; }
+    .toggle-switch {
+      position: relative;
+      width: 60px;
+      height: 34px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input { display: none; }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .toggle-slider::after {
+      content: '';
+      position: absolute;
+      left: 3px; top: 3px;
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: var(--text2);
+      transition: transform 0.2s, background 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: var(--success); border-color: var(--success); }
+    .toggle-switch input:checked + .toggle-slider::after { transform: translateX(26px); background: #fff; }
+
+    /* ============================================================
        画面2〜5: 準備中プレースホルダー
        ============================================================ */
     .placeholder-box {
@@ -609,15 +699,137 @@
 </div>
 
 <!-- ============================================================
-     画面4: 日報入力（PHASE 2以降で実装）
+     画面4: 日報入力
      ============================================================ -->
 <div id="screen-report" class="screen">
   <div class="page-header">
-    <h1>日報入力</h1>
+    <div id="report-header-name" class="main-header-name"></div>
+    <div id="report-header-date" class="main-header-date"></div>
   </div>
-  <div class="placeholder-box">
-    <div>この画面は次のフェーズで実装します</div>
-    <button class="back-btn" onclick="showScreen('screen-select')">もどる</button>
+  <div class="content">
+
+    <!-- 基本情報 -->
+    <div class="report-section">
+      <div class="section-title">基本情報</div>
+      <div class="form-row">
+        <label class="form-label" for="r-destination">配送地</label>
+        <input id="r-destination" class="form-input" type="text" placeholder="例：東京都新宿区">
+      </div>
+      <div class="form-2col">
+        <div>
+          <label class="form-label" for="r-depart">出発時刻</label>
+          <input id="r-depart" class="form-input" type="time">
+        </div>
+        <div>
+          <label class="form-label" for="r-return">帰着時刻</label>
+          <input id="r-return" class="form-input" type="time">
+        </div>
+      </div>
+    </div>
+
+    <!-- メーター -->
+    <div class="report-section">
+      <div class="section-title">メーター記録</div>
+      <div class="form-2col">
+        <div>
+          <label class="form-label" for="r-start-meter">開始メーター (km)</label>
+          <input id="r-start-meter" class="form-input" type="number" inputmode="numeric"
+                 placeholder="0" oninput="calcDistance()">
+        </div>
+        <div>
+          <label class="form-label" for="r-end-meter">終了メーター (km)</label>
+          <input id="r-end-meter" class="form-input" type="number" inputmode="numeric"
+                 placeholder="0" oninput="calcDistance()">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">走行距離（自動計算）</label>
+        <input id="r-distance" class="form-input" type="text" readonly placeholder="メーターを入力すると自動計算">
+      </div>
+    </div>
+
+    <!-- アルコールチェック -->
+    <div class="report-section">
+      <div class="section-title">アルコールチェック</div>
+
+      <!-- 乗務前 -->
+      <div class="alco-heading">乗務前</div>
+      <div class="form-row">
+        <label class="form-label" for="r-alc-b-method">確認方法</label>
+        <select id="r-alc-b-method" class="form-select">
+          <option value="">選択してください</option>
+          <option value="アルコール検知器">アルコール検知器</option>
+          <option value="対面">対面</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="form-label" for="r-alc-b-result">酒気帯びの有無</label>
+        <select id="r-alc-b-result" class="form-select">
+          <option value="">選択してください</option>
+          <option value="なし">なし</option>
+          <option value="あり">あり</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="form-label" for="r-alc-b-checker">確認者</label>
+        <select id="r-alc-b-checker" class="form-select">
+          <option value="">選択してください</option>
+        </select>
+      </div>
+
+      <hr class="alco-divider">
+
+      <!-- 乗務後 -->
+      <div class="alco-heading">乗務後</div>
+      <div class="form-row">
+        <label class="form-label" for="r-alc-a-method">確認方法</label>
+        <select id="r-alc-a-method" class="form-select">
+          <option value="">選択してください</option>
+          <option value="アルコール検知器">アルコール検知器</option>
+          <option value="対面">対面</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="form-label" for="r-alc-a-result">酒気帯びの有無</label>
+        <select id="r-alc-a-result" class="form-select">
+          <option value="">選択してください</option>
+          <option value="なし">なし</option>
+          <option value="あり">あり</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="form-label" for="r-alc-a-checker">確認者</label>
+        <select id="r-alc-a-checker" class="form-select">
+          <option value="">選択してください</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 特記事項 -->
+    <div class="report-section">
+      <div class="section-title">特記事項</div>
+      <div class="toggle-row">
+        <span class="toggle-label">宿泊あり</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="r-lodging">
+          <div class="toggle-slider"></div>
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="form-label" for="r-other">その他・メモ</label>
+        <textarea id="r-other" class="form-input" rows="3" placeholder="特記事項があれば入力"></textarea>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="confirmSaveReport()" style="margin-bottom:28px;">
+      日報を保存する
+    </button>
+
+  </div>
+  <div class="page-footer">
+    <button class="btn btn-ghost" style="width:auto;padding:12px 28px;font-size:16px;" onclick="goBackToMain()">
+      打刻画面にもどる
+    </button>
   </div>
 </div>
 
@@ -912,9 +1124,93 @@ function logout() {
   showScreen('screen-select');
 }
 
-// ── 日報入力へ ──
+// ============================================================
+// 画面4: 日報入力
+// ============================================================
 function goReport() {
+  document.getElementById('report-header-name').textContent = state.currentDriver.name;
+  document.getElementById('report-header-date').textContent = formatDateJP(new Date());
+  loadReportCheckers();
   showScreen('screen-report');
+}
+
+async function loadReportCheckers() {
+  try {
+    const res = await gasPost('getCheckers');
+    const opts = (res.checkers || []).map(c =>
+      `<option value="${c.name}">${c.name}</option>`
+    ).join('');
+    ['r-alc-b-checker', 'r-alc-a-checker'].forEach(id => {
+      const sel = document.getElementById(id);
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">選択してください</option>' + opts;
+      if (cur) sel.value = cur;
+    });
+  } catch (_) { /* 確認者取得失敗は非致命的 */ }
+}
+
+function calcDistance() {
+  const s = parseInt(document.getElementById('r-start-meter').value) || 0;
+  const e = parseInt(document.getElementById('r-end-meter').value)   || 0;
+  const d = e > s ? e - s : 0;
+  document.getElementById('r-distance').value = d > 0 ? d + ' km' : '';
+}
+
+function getReportData() {
+  const startMeter = parseInt(document.getElementById('r-start-meter').value) || null;
+  const endMeter   = parseInt(document.getElementById('r-end-meter').value)   || null;
+  const distance   = (startMeter && endMeter && endMeter > startMeter) ? endMeter - startMeter : null;
+  const jst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+  const dateISO = jst.toISOString().split('T')[0];
+
+  return {
+    action:      'saveRecord',
+    driverId:    state.currentDriver.id,
+    driverName:  state.currentDriver.name,
+    date:        dateISO,
+    destination: document.getElementById('r-destination').value.trim(),
+    departTime:  document.getElementById('r-depart').value,
+    returnTime:  document.getElementById('r-return').value,
+    startMeter,
+    endMeter,
+    distance,
+    alcBefore: {
+      method:  document.getElementById('r-alc-b-method').value,
+      result:  document.getElementById('r-alc-b-result').value,
+      checker: document.getElementById('r-alc-b-checker').value,
+    },
+    alcAfter: {
+      method:  document.getElementById('r-alc-a-method').value,
+      result:  document.getElementById('r-alc-a-result').value,
+      checker: document.getElementById('r-alc-a-checker').value,
+    },
+    lodging: document.getElementById('r-lodging').checked,
+    other:   document.getElementById('r-other').value.trim(),
+  };
+}
+
+function confirmSaveReport() {
+  openConfirm(
+    '日報を保存',
+    '入力した内容で日報を保存します。よろしいですか？',
+    async () => {
+      try {
+        showLoading('保存中...');
+        const data = getReportData();
+        await gasPost('saveRecord', data);
+        hideLoading();
+        showToast('日報を保存しました');
+        goBackToMain();
+      } catch (err) {
+        hideLoading();
+        showToast('保存に失敗しました', true);
+      }
+    }
+  );
+}
+
+function goBackToMain() {
+  enterMainScreen();
 }
 
 // ============================================================
