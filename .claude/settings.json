@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(**/*.html)",
+      "Edit(**/*.js)",
+      "Edit(**/*.css)",
+      "Edit(**/*.json)",
+      "Edit(**/*.md)",
+      "Edit(**/*.gs)",
+      "Edit(**/*.txt)",
+      "Edit(**/*.sh)",
+      "Edit(**/*.bat)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git log*)",
+      "Bash(git push*)",
+      "Bash(git pull*)",
+      "Bash(git checkout*)",
+      "Bash(git branch*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(echo*)",
+      "Bash(mkdir*)",
+      "Bash(cp*)",
+      "Bash(mv*)",
+      "Bash(find*)",
+      "Bash(grep*)",
+      "Bash(node*)",
+      "Bash(npm*)",
+      "Bash(npx*)",
+      "Bash(clasp*)"
+    ],
+    "deny": [
+      "Edit(.env*)",
+      "Edit(*.key)",
+      "Edit(*.pem)",
+      "Edit(*.secret)",
+      "Edit(**/.git/config)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf /*)",
+      "Bash(chmod 777*)",
+      "Bash(sudo*)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | bash)"
+    ]
+  }
+}
