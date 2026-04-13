@@ -258,6 +258,74 @@
     }
 
     /* ============================================================
+       画面2: パスワード入力
+       ============================================================ */
+    .pw-driver-name {
+      font-size: 28px;
+      font-weight: bold;
+      text-align: center;
+      margin: 28px 0 6px;
+    }
+    .pw-subtitle {
+      font-size: 16px;
+      color: var(--text2);
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .pw-dots {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 14px;
+      min-height: 36px;
+      margin-bottom: 28px;
+    }
+    .pw-dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: transparent;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .pw-dot.filled {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .pw-numpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .pw-key {
+      height: 76px;
+      font-size: 30px;
+      font-weight: bold;
+      background: var(--surface);
+      color: var(--text);
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.1s, transform 0.08s;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .pw-key:active { transform: scale(0.91); background: var(--surface2); }
+    .pw-key.sub    { font-size: 17px; color: var(--text2); }
+    .pw-error {
+      background: #450a0a;
+      border: 1px solid var(--danger);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      color: #fca5a5;
+      text-align: center;
+      font-size: 18px;
+      margin-bottom: 16px;
+    }
+
+    /* ============================================================
        画面2〜5: 準備中プレースホルダー
        ============================================================ */
     .placeholder-box {
@@ -327,15 +395,48 @@
 </div>
 
 <!-- ============================================================
-     画面2: パスワード入力（PHASE 2以降で実装）
+     画面2: パスワード入力
      ============================================================ -->
 <div id="screen-password" class="screen">
   <div class="page-header">
     <h1>パスワード入力</h1>
   </div>
-  <div class="placeholder-box">
-    <div>この画面は次のフェーズで実装します</div>
-    <button class="back-btn" onclick="showScreen('screen-select')">もどる</button>
+  <div class="content">
+    <div id="pw-driver-name" class="pw-driver-name"></div>
+    <div class="pw-subtitle">パスワードを入力してください</div>
+
+    <!-- 入力済み桁数をドットで表示 -->
+    <div id="pw-dots" class="pw-dots">
+      <span style="color:var(--text2);font-size:16px;">未入力</span>
+    </div>
+
+    <!-- エラーメッセージ -->
+    <div id="pw-error" class="pw-error" style="display:none;"></div>
+
+    <!-- 数字パッド -->
+    <div class="pw-numpad">
+      <button class="pw-key" onclick="pwKey('1')">1</button>
+      <button class="pw-key" onclick="pwKey('2')">2</button>
+      <button class="pw-key" onclick="pwKey('3')">3</button>
+      <button class="pw-key" onclick="pwKey('4')">4</button>
+      <button class="pw-key" onclick="pwKey('5')">5</button>
+      <button class="pw-key" onclick="pwKey('6')">6</button>
+      <button class="pw-key" onclick="pwKey('7')">7</button>
+      <button class="pw-key" onclick="pwKey('8')">8</button>
+      <button class="pw-key" onclick="pwKey('9')">9</button>
+      <button class="pw-key sub" onclick="pwClear()">クリア</button>
+      <button class="pw-key" onclick="pwKey('0')">0</button>
+      <button class="pw-key sub" onclick="pwBackspace()">&#9003;</button>
+    </div>
+
+    <button class="btn btn-primary" id="pw-submit" onclick="submitPassword()">
+      ログイン
+    </button>
+  </div>
+  <div class="page-footer">
+    <button class="btn btn-ghost" style="width:auto;padding:12px 28px;" onclick="pwGoBack()">
+      もどる
+    </button>
   </div>
 </div>
 
@@ -489,13 +590,101 @@ async function loadDrivers() {
 function selectDriver(driverId) {
   state.currentDriver = state.drivers.find(d => d.id === driverId) || null;
   if (!state.currentDriver) return;
-  // 画面2（パスワード入力）へ
-  showScreen('screen-password');
+  enterPasswordScreen();
 }
 
 function goAdminLogin() {
-  // 画面5（管理者）へ
   showScreen('screen-admin');
+}
+
+// 画面3（メイン打刻）へ遷移 — 実装は次フェーズ
+function enterMainScreen() {
+  showScreen('screen-main');
+}
+
+// ============================================================
+// 画面2: パスワード入力
+// ============================================================
+let _pwValue = '';
+const PW_MAX  = 8; // 最大桁数
+
+function enterPasswordScreen() {
+  _pwValue = '';
+  document.getElementById('pw-driver-name').textContent = state.currentDriver.name;
+  document.getElementById('pw-error').style.display     = 'none';
+  renderPwDots();
+  showScreen('screen-password');
+}
+
+function renderPwDots() {
+  const dots = document.getElementById('pw-dots');
+  if (_pwValue.length === 0) {
+    dots.innerHTML = '<span style="color:var(--text2);font-size:16px;">未入力</span>';
+    return;
+  }
+  dots.innerHTML = Array.from({ length: _pwValue.length }, () =>
+    '<div class="pw-dot filled"></div>'
+  ).join('');
+}
+
+function pwKey(digit) {
+  if (_pwValue.length >= PW_MAX) return;
+  _pwValue += digit;
+  document.getElementById('pw-error').style.display = 'none';
+  renderPwDots();
+}
+
+function pwBackspace() {
+  if (_pwValue.length === 0) return;
+  _pwValue = _pwValue.slice(0, -1);
+  renderPwDots();
+}
+
+function pwClear() {
+  _pwValue = '';
+  document.getElementById('pw-error').style.display = 'none';
+  renderPwDots();
+}
+
+function showPwError(msg) {
+  const el = document.getElementById('pw-error');
+  el.textContent    = msg;
+  el.style.display  = 'block';
+}
+
+async function submitPassword() {
+  if (_pwValue.length === 0) {
+    showPwError('パスワードを入力してください');
+    return;
+  }
+
+  const btn = document.getElementById('pw-submit');
+  btn.disabled = true;
+
+  try {
+    showLoading('確認中...');
+    const res = await gasPost('verifyPassword', { password: _pwValue });
+    hideLoading();
+
+    if (res.success) {
+      _pwValue = ''; // 認証後は即クリア
+      enterMainScreen();
+    } else {
+      showPwError('パスワードが正しくありません');
+      _pwValue = '';
+      renderPwDots();
+    }
+  } catch (err) {
+    hideLoading();
+    showPwError('通信エラーが発生しました');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function pwGoBack() {
+  _pwValue = '';
+  showScreen('screen-select');
 }
 
 // ============================================================
