@@ -3,567 +3,715 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ドライバー勤怠管理</title>
-  <!-- 機密情報は config.js から読み込む（.gitignore 済み） -->
+  <title>配送ドライバー出退勤管理</title>
+  <!-- GAS URLは config.js の CONFIG.GAS_URL から読み込む（.gitignore済み） -->
   <script src="config.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    /* ============================================================
-       リセット・基本設定
-       ============================================================ */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ============================================================
+   リセット・変数
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
-      --bg:        #0f172a;
-      --surface:   #1e293b;
-      --surface2:  #334155;
-      --border:    #475569;
-      --text:      #f1f5f9;
-      --text2:     #94a3b8;
-      --accent:    #3b82f6;
-      --accent-dk: #1d4ed8;
-      --success:   #16a34a;
-      --danger:    #dc2626;
-      --warning:   #d97706;
-      --radius:    12px;
-      --radius-sm: 8px;
-    }
+:root {
+  --bg:       #0f0f0f;
+  --surface:  #1a1a1a;
+  --surface2: #242424;
+  --border:   #2e2e2e;
+  --accent:   #fb923c;
+  --danger:   #ef4444;
+  --success:  #22c55e;
+  --info:     #3b82f6;
+  --text:     #f0f0f0;
+  --text2:    #b8b8b8;
+  --text3:    #909090;
+  --night:    #818cf8;
+  --holiday:  #f43f5e;
+  --overtime: #facc15;
+  --radius:   14px;
+  --radius-sm: 8px;
+  --nav-h:    60px;
+}
 
-    html, body {
-      height: 100%;
-      font-family: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
-    }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-size: 18px;
-      line-height: 1.5;
-      min-height: 100vh;
-    }
+html, body {
+  height: 100%;
+  font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+}
 
-    /* ============================================================
-       画面切り替え
-       ============================================================ */
-    .screen { display: none; flex-direction: column; min-height: 100vh; }
-    .screen.active { display: flex; }
+/* ============================================================
+   画面管理
+   ============================================================ */
+.screen {
+  display: none;
+  flex-direction: column;
+  min-height: 100vh;
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+}
+.screen.active { display: flex; }
 
-    /* ============================================================
-       共通: ヘッダー
-       ============================================================ */
-    .page-header {
-      background: var(--surface);
-      padding: 24px 20px 18px;
-      border-bottom: 2px solid var(--border);
-      text-align: center;
-      position: sticky;
-      top: 0;
-      z-index: 50;
-    }
-    .page-header h1 {
-      font-size: 26px;
-      font-weight: bold;
-      letter-spacing: 2px;
-    }
-    .page-header p {
-      font-size: 16px;
-      color: var(--text2);
-      margin-top: 4px;
-    }
+/* 管理者キー画面はナビなし */
+.screen-fullpage {
+  display: none;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 40px 24px;
+}
+.screen-fullpage.active { display: flex; }
 
-    /* ============================================================
-       共通: コンテンツエリア
-       ============================================================ */
-    .content {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
+/* ============================================================
+   ヘッダー
+   ============================================================ */
+.header {
+  padding: 52px 20px 14px;
+  background: linear-gradient(180deg, #0a0a0a 0%, var(--bg) 100%);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.app-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  line-height: 1;
+}
+.driver-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text2);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+}
+.driver-badge-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.driver-badge-arrow { font-size: 10px; flex-shrink: 0; }
 
-    /* ============================================================
-       共通: フッター
-       ============================================================ */
-    .page-footer {
-      padding: 16px 20px;
-      border-top: 1px solid var(--border);
-      background: var(--surface);
-      text-align: center;
-    }
+/* ============================================================
+   コンテンツエリア
+   ============================================================ */
+.content {
+  flex: 1;
+  padding: 16px 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
-    /* ============================================================
-       共通: ボタン
-       ============================================================ */
-    .btn {
-      display: inline-block;
-      padding: 14px 28px;
-      border: none;
-      border-radius: var(--radius);
-      font-size: 18px;
-      font-weight: bold;
-      font-family: inherit;
-      cursor: pointer;
-      min-height: 52px;
-      transition: opacity 0.15s, transform 0.1s;
-    }
-    .btn:active { transform: scale(0.97); }
-    .btn-primary   { background: var(--accent);   color: #fff; width: 100%; }
-    .btn-secondary { background: var(--surface2); color: var(--text); width: 100%; }
-    .btn-danger    { background: var(--danger);   color: #fff; width: 100%; }
-    .btn-ghost     { background: transparent; color: var(--text2); border: 1px solid var(--border); }
-    .btn:disabled  { opacity: 0.4; cursor: not-allowed; }
+/* ============================================================
+   ボトムナビゲーション
+   ============================================================ */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom);
+  height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+}
+.nav-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 4px;
+  color: var(--text3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.2s;
+  min-width: 0;
+}
+.nav-btn:active { opacity: 0.7; }
+.nav-btn.active { color: var(--accent); }
+.nav-icon { font-size: 20px; line-height: 1; }
+.nav-label { font-size: 11px; font-family: 'Noto Sans JP', sans-serif; }
 
-    /* ============================================================
-       共通: トースト通知
-       ============================================================ */
-    #toast {
-      position: fixed;
-      bottom: 80px;
-      left: 50%;
-      transform: translateX(-50%) translateY(20px);
-      background: var(--surface2);
-      color: var(--text);
-      padding: 14px 24px;
-      border-radius: 999px;
-      font-size: 16px;
-      white-space: nowrap;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s, transform 0.3s;
-      z-index: 500;
-      border: 1px solid var(--border);
-    }
-    #toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-    #toast.error { background: #7f1d1d; border-color: var(--danger); }
+/* ============================================================
+   共通ボタン
+   ============================================================ */
+.btn {
+  display: inline-block;
+  padding: 13px 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.08s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.btn:active { transform: scale(0.96); }
+.btn-full { width: 100%; display: block; text-align: center; }
+.btn-primary  { background: var(--accent);   color: #fff; }
+.btn-success  { background: var(--success);  color: #fff; }
+.btn-danger   { background: var(--danger);   color: #fff; }
+.btn-ghost    { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
-    /* ============================================================
-       共通: 確認モーダル
-       ============================================================ */
-    #confirm-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.7);
-      z-index: 300;
-      display: flex;
-      align-items: flex-end;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.25s;
-    }
-    #confirm-overlay.open {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    #confirm-sheet {
-      background: var(--surface);
-      border-radius: 20px 20px 0 0;
-      padding: 28px 24px 40px;
-      width: 100%;
-      transform: translateY(40px);
-      transition: transform 0.25s;
-    }
-    #confirm-overlay.open #confirm-sheet {
-      transform: translateY(0);
-    }
-    #confirm-title {
-      font-size: 20px;
-      font-weight: bold;
-      text-align: center;
-      margin-bottom: 8px;
-    }
-    #confirm-body {
-      font-size: 16px;
-      color: var(--text2);
-      text-align: center;
-      margin-bottom: 24px;
-    }
-    #confirm-ok   { margin-bottom: 12px; }
+/* ============================================================
+   トースト通知
+   ============================================================ */
+#toast {
+  position: fixed;
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px);
+  left: 50%;
+  transform: translateX(-50%) translateY(16px);
+  background: var(--surface2);
+  color: var(--text);
+  padding: 12px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  z-index: 600;
+  border: 1px solid var(--border);
+  max-width: calc(100vw - 40px);
+  text-align: center;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.error { background: #3b0a0a; border-color: var(--danger); color: #fca5a5; }
 
-    /* ============================================================
-       共通: ローディングオーバーレイ
-       ============================================================ */
-    #loading-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.6);
-      z-index: 400;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s;
-    }
-    #loading-overlay.show { opacity: 1; pointer-events: auto; }
-    .spinner {
-      width: 48px;
-      height: 48px;
-      border: 4px solid var(--surface2);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    #loading-msg { font-size: 18px; color: var(--text2); }
+/* ============================================================
+   確認ダイアログ
+   ============================================================ */
+#confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 400;
+  display: flex;
+  align-items: flex-end;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+#confirm-overlay.open { opacity: 1; pointer-events: auto; }
+#confirm-sheet {
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 28px 24px calc(28px + env(safe-area-inset-bottom));
+  width: 100%;
+  transform: translateY(40px);
+  transition: transform 0.25s;
+}
+#confirm-overlay.open #confirm-sheet { transform: translateY(0); }
+#confirm-title {
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 8px;
+}
+#confirm-body {
+  font-size: 14px;
+  color: var(--text2);
+  text-align: center;
+  margin-bottom: 24px;
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+.confirm-btn {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.confirm-btn.danger   { background: var(--danger);   color: #fff; }
+.confirm-btn.primary  { background: var(--accent);   color: #fff; }
+.confirm-btn.ghost    { background: var(--surface2); color: var(--text2); }
 
-    /* ============================================================
-       画面1: ドライバー選択
-       ============================================================ */
-    .driver-btn {
-      display: flex;
-      align-items: center;
-      width: 100%;
-      padding: 20px 24px;
-      margin-bottom: 14px;
-      background: var(--surface);
-      color: var(--text);
-      border: 2px solid var(--border);
-      border-radius: var(--radius);
-      font-size: 22px;
-      font-weight: bold;
-      font-family: inherit;
-      text-align: left;
-      cursor: pointer;
-      min-height: 72px;
-      transition: background 0.15s, border-color 0.15s, transform 0.1s;
-    }
-    .driver-btn:hover  { background: var(--accent-dk); border-color: var(--accent); }
-    .driver-btn:active { transform: scale(0.97); background: var(--accent-dk); }
+/* ============================================================
+   ローディングオーバーレイ
+   ============================================================ */
+#loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+#loading-overlay.show { opacity: 1; pointer-events: auto; }
+.spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid var(--surface2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading-msg { font-size: 15px; color: var(--text2); }
 
-    .error-box {
-      background: #450a0a;
-      border: 1px solid var(--danger);
-      border-radius: var(--radius);
-      padding: 20px;
-      color: #fca5a5;
-      text-align: center;
-      font-size: 18px;
-    }
-    .error-box small {
-      display: block;
-      margin-top: 8px;
-      font-size: 14px;
-      color: #f87171;
-    }
-    .error-box .btn { margin-top: 16px; width: auto; }
+/* ============================================================
+   シートモーダル（共通）
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+  touch-action: none;
+}
+.modal-overlay.open { opacity: 1; pointer-events: auto; }
+.modal-sheet {
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+  width: 100%;
+  transform: translateY(30px);
+  transition: transform 0.25s;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-overlay.open .modal-sheet { transform: translateY(0); }
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 20px;
+}
 
-    .loading-txt {
-      text-align: center;
-      padding: 48px 0;
-      color: var(--text2);
-      font-size: 18px;
-    }
+/* ============================================================
+   フォーム部品（共通）
+   ============================================================ */
+.form-group { margin-bottom: 16px; }
+.form-group:last-child { margin-bottom: 0; }
+.form-label {
+  display: block;
+  font-size: 13px;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 16px;
+  padding: 11px 14px;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.form-input[readonly] { color: var(--text3); background: var(--bg); }
+.form-textarea { resize: vertical; min-height: 72px; line-height: 1.5; }
+.form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-    /* ============================================================
-       画面2: パスワード入力
-       ============================================================ */
-    .pw-driver-name {
-      font-size: 28px;
-      font-weight: bold;
-      text-align: center;
-      margin: 28px 0 6px;
-    }
-    .pw-subtitle {
-      font-size: 16px;
-      color: var(--text2);
-      text-align: center;
-      margin-bottom: 32px;
-    }
-    .pw-dots {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 14px;
-      min-height: 36px;
-      margin-bottom: 28px;
-    }
-    .pw-dot {
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      border: 2px solid var(--border);
-      background: transparent;
-      transition: background 0.12s, border-color 0.12s;
-    }
-    .pw-dot.filled {
-      background: var(--accent);
-      border-color: var(--accent);
-    }
-    .pw-numpad {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      margin-bottom: 24px;
-    }
-    .pw-key {
-      height: 76px;
-      font-size: 30px;
-      font-weight: bold;
-      background: var(--surface);
-      color: var(--text);
-      border: 2px solid var(--border);
-      border-radius: var(--radius);
-      font-family: inherit;
-      cursor: pointer;
-      transition: background 0.1s, transform 0.08s;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    .pw-key:active { transform: scale(0.91); background: var(--surface2); }
-    .pw-key.sub    { font-size: 17px; color: var(--text2); }
-    .pw-error {
-      background: #450a0a;
-      border: 1px solid var(--danger);
-      border-radius: var(--radius-sm);
-      padding: 14px 16px;
-      color: #fca5a5;
-      text-align: center;
-      font-size: 18px;
-      margin-bottom: 16px;
-    }
+/* チップ選択（アルコールチェック用）*/
+.chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+  font-family: inherit;
+  background: none;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip.active-success { background: var(--success); border-color: var(--success); color: #fff; }
+.chip.active-danger  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
+.chip.active-info    { background: var(--info);    border-color: var(--info);    color: #fff; }
 
-    /* ============================================================
-       画面3: メイン打刻
-       ============================================================ */
-    .main-header-name {
-      font-size: 24px;
-      font-weight: bold;
-      text-align: center;
-    }
-    .main-header-date {
-      font-size: 15px;
-      color: var(--text2);
-      text-align: center;
-      margin-top: 4px;
-    }
+/* セクションタイトル */
+.section-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
 
-    /* ステータスカード */
-    .status-card {
-      border-radius: var(--radius);
-      padding: 24px 20px;
-      text-align: center;
-      margin-bottom: 24px;
-      border: 2px solid var(--border);
-      background: var(--surface);
-    }
-    .status-card.working { background: #052e16; border-color: var(--success); }
-    .status-card.done    { background: #0c1a35; border-color: var(--accent); }
+/* カード */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
 
-    .status-badge {
-      display: inline-block;
-      padding: 6px 22px;
-      border-radius: 999px;
-      font-size: 20px;
-      font-weight: bold;
-      margin-bottom: 14px;
-    }
-    .status-card.none    .status-badge { background: var(--surface2); color: var(--text2); }
-    .status-card.working .status-badge { background: var(--success);  color: #fff; }
-    .status-card.done    .status-badge { background: var(--accent);   color: #fff; }
+/* トグルスイッチ */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.toggle-switch { position: relative; width: 48px; height: 28px; flex-shrink: 0; }
+.toggle-switch input { display: none; }
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  left: 3px; top: 3px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--text3);
+  transition: transform 0.2s, background 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--success); border-color: var(--success); }
+.toggle-switch input:checked + .toggle-slider::after { transform: translateX(20px); background: #fff; }
 
-    .status-times {
-      font-size: 16px;
-      color: var(--text2);
-      line-height: 2.2;
-    }
-    .status-times strong { color: var(--text); font-size: 18px; }
+/* ============================================================
+   打刻ボタン（大型グラデーション）
+   ============================================================ */
+.punch-btn {
+  border: none;
+  border-radius: var(--radius);
+  padding: 20px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  transition: transform 0.1s, opacity 0.2s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.punch-btn:active { transform: scale(0.96); }
+.punch-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+.punch-icon  { font-size: 52px; line-height: 1; }
+.punch-label { font-size: 30px; font-weight: 700; color: #fff; }
+.punch-sub   { font-size: 11px; color: rgba(255,255,255,0.65); }
+.punch-btn.start       { background: linear-gradient(135deg, #15803d, #22c55e); }
+.punch-btn.end         { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+.punch-btn.break-start { background: linear-gradient(135deg, #1d4ed8, #3b82f6); }
+.punch-btn.break-end   { background: linear-gradient(135deg, #6d28d9, #a78bfa); }
 
-    /* 打刻ボタン */
-    .action-btn {
-      display: block;
-      width: 100%;
-      border: none;
-      border-radius: var(--radius);
-      font-family: inherit;
-      font-weight: bold;
-      cursor: pointer;
-      min-height: 84px;
-      font-size: 28px;
-      margin-bottom: 14px;
-      transition: opacity 0.15s, transform 0.1s;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    .action-btn:active { transform: scale(0.97); }
-    .action-btn.clock-in   { background: linear-gradient(135deg, #15803d, #22c55e); color: #fff; }
-    .action-btn.clock-out  { background: linear-gradient(135deg, #b91c1c, #ef4444); color: #fff; }
-    .action-btn.alco-check { background: linear-gradient(135deg, #1d4ed8, #60a5fa); color: #fff; }
+/* ============================================================
+   記録カード
+   ============================================================ */
+.record-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  position: relative;
+}
+.record-date { font-size: 13px; color: var(--text3); margin-bottom: 6px; }
+.record-time {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px;
+  letter-spacing: 2px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.hour-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-right: 6px;
+  margin-bottom: 4px;
+}
+.hour-chip.normal    { background: rgba(240,240,240,0.12); color: var(--text2); }
+.hour-chip.over      { background: rgba(250,204,21,0.15);  color: var(--overtime); }
+.hour-chip.night-h   { background: rgba(129,140,248,0.15); color: var(--night); }
+.hour-chip.hol       { background: rgba(244,63,94,0.15);   color: var(--holiday); }
+.hour-chip.drive     { background: rgba(34,197,94,0.12);   color: var(--success); }
+.hour-chip.break-h   { background: rgba(59,130,246,0.12);  color: var(--info); }
+.rec-actions { display: flex; gap: 8px; margin-top: 12px; }
+.rec-action-btn {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  background: none;
+  border: 1px solid rgba(251,146,60,0.4);
+  border-radius: var(--radius-sm);
+  padding: 5px 14px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1;
+}
+.rec-action-btn.print { color: var(--text2); border-color: var(--border); background: var(--surface2); }
 
-    .done-msg {
-      text-align: center;
-      color: var(--text2);
-      font-size: 18px;
-      padding: 20px 0 8px;
-    }
+/* ============================================================
+   期間セレクター
+   ============================================================ */
+.period-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.period-label {
+  flex: 1;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.period-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text2);
+  font-size: 18px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.period-btn:active { opacity: 0.7; }
 
-    /* アルコールチェック入力モーダル */
-    #alco-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.75);
-      z-index: 310;
-      display: flex;
-      align-items: flex-end;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.25s;
-    }
-    #alco-overlay.open { opacity: 1; pointer-events: auto; }
-    #alco-sheet {
-      background: var(--surface);
-      border-radius: 20px 20px 0 0;
-      padding: 28px 24px 44px;
-      width: 100%;
-      transform: translateY(40px);
-      transition: transform 0.25s;
-    }
-    #alco-overlay.open #alco-sheet { transform: translateY(0); }
-    .alco-title {
-      font-size: 20px;
-      font-weight: bold;
-      text-align: center;
-      margin-bottom: 20px;
-    }
-    .alco-unit {
-      text-align: center;
-      font-size: 14px;
-      color: var(--text2);
-      margin-bottom: 8px;
-    }
-    #alco-input {
-      width: 100%;
-      background: var(--surface2);
-      border: 2px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-size: 52px;
-      font-weight: bold;
-      text-align: center;
-      padding: 16px;
-      margin-bottom: 20px;
-      font-family: inherit;
-    }
-    #alco-input:focus { outline: none; border-color: var(--accent); }
+/* ============================================================
+   管理者キー入力画面
+   ============================================================ */
+.admin-key-box {
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+.admin-key-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 36px;
+  letter-spacing: 4px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.admin-key-subtitle {
+  font-size: 14px;
+  color: var(--text2);
+  margin-bottom: 32px;
+}
+.admin-key-input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 18px;
+  padding: 14px 16px;
+  font-family: inherit;
+  text-align: center;
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+}
+.admin-key-input:focus { outline: none; border-color: var(--accent); }
+.admin-key-error {
+  background: #3b0a0a;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  color: #fca5a5;
+  padding: 10px 14px;
+  font-size: 14px;
+  margin-bottom: 16px;
+  text-align: center;
+}
 
-    /* ============================================================
-       画面4: 日報入力
-       ============================================================ */
-    .report-section {
-      background: var(--surface);
-      border-radius: var(--radius);
-      padding: 20px;
-      margin-bottom: 16px;
-    }
-    .section-title {
-      font-size: 14px;
-      font-weight: bold;
-      color: var(--text2);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 16px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--border);
-    }
-    .form-row { margin-bottom: 16px; }
-    .form-row:last-child { margin-bottom: 0; }
-    .form-label {
-      display: block;
-      font-size: 15px;
-      color: var(--text2);
-      margin-bottom: 6px;
-    }
-    .form-input, .form-select {
-      width: 100%;
-      background: var(--surface2);
-      border: 2px solid var(--border);
-      border-radius: var(--radius-sm);
-      color: var(--text);
-      font-size: 20px;
-      padding: 13px 16px;
-      font-family: inherit;
-      box-sizing: border-box;
-    }
-    .form-input:focus, .form-select:focus { outline: none; border-color: var(--accent); }
-    .form-select { cursor: pointer; }
-    .form-input[readonly] { background: var(--bg); color: var(--text2); }
-    textarea.form-input { resize: vertical; min-height: 80px; line-height: 1.5; }
-    .form-2col {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-    .alco-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-    .alco-heading {
-      font-size: 17px;
-      font-weight: bold;
-      margin-bottom: 14px;
-      color: var(--text);
-    }
-    .toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 4px 0 16px;
-    }
-    .toggle-label { font-size: 20px; }
-    .toggle-switch {
-      position: relative;
-      width: 60px;
-      height: 34px;
-      flex-shrink: 0;
-    }
-    .toggle-switch input { display: none; }
-    .toggle-slider {
-      position: absolute;
-      inset: 0;
-      background: var(--surface2);
-      border: 2px solid var(--border);
-      border-radius: 999px;
-      cursor: pointer;
-      transition: background 0.2s, border-color 0.2s;
-    }
-    .toggle-slider::after {
-      content: '';
-      position: absolute;
-      left: 3px; top: 3px;
-      width: 24px; height: 24px;
-      border-radius: 50%;
-      background: var(--text2);
-      transition: transform 0.2s, background 0.2s;
-    }
-    .toggle-switch input:checked + .toggle-slider { background: var(--success); border-color: var(--success); }
-    .toggle-switch input:checked + .toggle-slider::after { transform: translateX(26px); background: #fff; }
+/* ============================================================
+   ドライバー選択モーダル
+   ============================================================ */
+.driver-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.driver-item:active { opacity: 0.75; }
+.driver-item.selected { border-color: var(--accent); }
+.driver-item-name { font-size: 16px; font-weight: 700; }
+.driver-item-id   { font-size: 12px; color: var(--text3); }
+.driver-url-btn   {
+  font-size: 12px;
+  color: var(--text3);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
 
-    /* ============================================================
-       画面2〜5: 準備中プレースホルダー
-       ============================================================ */
-    .placeholder-box {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      color: var(--text2);
-      font-size: 20px;
-      padding: 40px;
-      text-align: center;
-    }
-    .placeholder-box .back-btn {
-      margin-top: 24px;
-      padding: 14px 32px;
-      background: var(--surface2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      font-size: 18px;
-      font-family: inherit;
-      cursor: pointer;
-    }
+/* ============================================================
+   タイムピッカーモーダル
+   ============================================================ */
+.time-input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 64px;
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 2px;
+  padding: 12px 16px;
+  text-align: center;
+}
+.time-input:focus { outline: none; border-color: var(--accent); }
+
+/* ============================================================
+   アルコールチェックモーダル
+   ============================================================ */
+.alc-section { margin-bottom: 20px; }
+.alc-section-label { font-size: 13px; color: var(--text2); margin-bottom: 8px; }
+
+/* ============================================================
+   日報フォーム
+   ============================================================ */
+.rf-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.rf-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.rf-list-item:last-child { margin-bottom: 0; }
+.rf-list-idx { font-size: 13px; color: var(--text3); width: 20px; flex-shrink: 0; }
+.rf-del-btn {
+  font-size: 13px;
+  color: var(--danger);
+  background: none;
+  border: 1px solid rgba(239,68,68,0.4);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.rf-add-btn {
+  font-size: 14px;
+  color: var(--accent);
+  background: none;
+  border: 1px solid rgba(251,146,60,0.4);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* ============================================================
+   月次集計
+   ============================================================ */
+.monthly-summary {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.monthly-item-label { font-size: 12px; color: var(--text3); margin-bottom: 4px; }
+.monthly-item-value {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 1px;
+}
+.monthly-item-value.normal  { color: var(--text); }
+.monthly-item-value.over    { color: var(--overtime); }
+.monthly-item-value.night   { color: var(--night); }
+.monthly-item-value.holiday { color: var(--holiday); }
+
+/* ============================================================
+   空状態
+   ============================================================ */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text3);
+  font-size: 15px;
+}
+
+/* ============================================================
+   ユーティリティ
+   ============================================================ */
+.mt-8  { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mb-8  { margin-bottom: 8px; }
+.mb-16 { margin-bottom: 16px; }
+.text-center { text-align: center; }
+.text-2 { color: var(--text2); }
+.text-3 { color: var(--text3); }
+.text-accent  { color: var(--accent); }
+.text-success { color: var(--success); }
+.text-danger  { color: var(--danger); }
+.divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   </style>
 </head>
 <body>
@@ -577,8 +725,8 @@
   <div id="confirm-sheet">
     <div id="confirm-title"></div>
     <div id="confirm-body"></div>
-    <button id="confirm-ok"     class="btn btn-danger">実行する</button>
-    <button id="confirm-cancel" class="btn btn-secondary" onclick="closeConfirm()">キャンセル</button>
+    <button id="confirm-ok" class="confirm-btn danger">実行</button>
+    <button class="confirm-btn ghost" onclick="closeConfirm()">キャンセル</button>
   </div>
 </div>
 
@@ -587,285 +735,256 @@
   <div id="loading-msg">読み込み中...</div>
 </div>
 
-<!-- アルコールチェック値入力モーダル -->
-<div id="alco-overlay">
-  <div id="alco-sheet">
-    <div class="alco-title">アルコール検査値を入力</div>
-    <div class="alco-unit">単位: mg/L（0.00 が正常）</div>
-    <input id="alco-input" type="number" step="0.01" min="0" max="9.99"
-           inputmode="decimal" placeholder="0.00">
-    <button class="btn btn-primary" onclick="confirmAlcoCheck()" style="margin-bottom:12px;">
-      記録する
-    </button>
-    <button class="btn btn-secondary" onclick="closeAlcoModal()">キャンセル</button>
-  </div>
-</div>
-
 <!-- ============================================================
-     画面1: ドライバー選択
+     管理者キー入力画面
+     （セキュリティ修正：URL パラメータ → フォーム POST に変更）
      ============================================================ -->
-<div id="screen-select" class="screen active">
-  <div class="page-header">
-    <h1>勤怠管理</h1>
-    <p>ドライバーを選択してください</p>
-  </div>
-  <div class="content">
-    <div id="driver-list">
-      <div class="loading-txt">読み込み中...</div>
-    </div>
-  </div>
-  <div class="page-footer">
-    <button class="btn btn-ghost" onclick="goAdminLogin()" style="width:auto;font-size:16px;padding:12px 28px;">
-      管理者
-    </button>
-  </div>
-</div>
-
-<!-- ============================================================
-     画面2: パスワード入力
-     ============================================================ -->
-<div id="screen-password" class="screen">
-  <div class="page-header">
-    <h1>パスワード入力</h1>
-  </div>
-  <div class="content">
-    <div id="pw-driver-name" class="pw-driver-name"></div>
-    <div class="pw-subtitle">パスワードを入力してください</div>
-
-    <!-- 入力済み桁数をドットで表示 -->
-    <div id="pw-dots" class="pw-dots">
-      <span style="color:var(--text2);font-size:16px;">未入力</span>
-    </div>
-
-    <!-- エラーメッセージ -->
-    <div id="pw-error" class="pw-error" style="display:none;"></div>
-
-    <!-- 数字パッド -->
-    <div class="pw-numpad">
-      <button class="pw-key" onclick="pwKey('1')">1</button>
-      <button class="pw-key" onclick="pwKey('2')">2</button>
-      <button class="pw-key" onclick="pwKey('3')">3</button>
-      <button class="pw-key" onclick="pwKey('4')">4</button>
-      <button class="pw-key" onclick="pwKey('5')">5</button>
-      <button class="pw-key" onclick="pwKey('6')">6</button>
-      <button class="pw-key" onclick="pwKey('7')">7</button>
-      <button class="pw-key" onclick="pwKey('8')">8</button>
-      <button class="pw-key" onclick="pwKey('9')">9</button>
-      <button class="pw-key sub" onclick="pwClear()">クリア</button>
-      <button class="pw-key" onclick="pwKey('0')">0</button>
-      <button class="pw-key sub" onclick="pwBackspace()">&#9003;</button>
-    </div>
-
-    <button class="btn btn-primary" id="pw-submit" onclick="submitPassword()">
+<div id="screen-admin-key" class="screen-fullpage">
+  <div class="admin-key-box">
+    <div class="admin-key-title">DRIVER MGMT</div>
+    <div class="admin-key-subtitle">管理者キーを入力してください</div>
+    <div id="admin-key-error" class="admin-key-error" style="display:none;"></div>
+    <input id="admin-key-input" class="admin-key-input" type="password"
+           placeholder="管理者キー"
+           onkeydown="if(event.key==='Enter') submitAdminKey()">
+    <button id="admin-key-submit" class="btn btn-primary btn-full" onclick="submitAdminKey()">
       ログイン
     </button>
   </div>
-  <div class="page-footer">
-    <button class="btn btn-ghost" style="width:auto;padding:12px 28px;" onclick="pwGoBack()">
-      もどる
-    </button>
-  </div>
 </div>
 
 <!-- ============================================================
-     画面3: メイン打刻
+     画面1: 打刻
      ============================================================ -->
-<div id="screen-main" class="screen">
-  <div class="page-header">
-    <div id="main-header-name" class="main-header-name"></div>
-    <div id="main-header-date" class="main-header-date"></div>
-  </div>
-  <div class="content">
-
-    <!-- ステータスカード -->
-    <div id="main-status-card" class="status-card none">
-      <div class="status-badge">読み込み中...</div>
-    </div>
-
-    <!-- 打刻ボタンエリア（状態に応じて切り替え） -->
-    <div id="action-area"></div>
-
-    <!-- 日報入力へ -->
-    <button class="btn btn-secondary" onclick="goReport()" style="margin-top:8px;">
-      日報入力
+<div id="screen-punch" class="screen">
+  <div class="header">
+    <div class="app-title">PUNCH</div>
+    <button class="driver-badge" id="driver-badge-punch" onclick="openDriverModal()">
+      <span class="driver-badge-name">---</span>
+      <span class="driver-badge-arrow">▼</span>
     </button>
-
   </div>
-  <div class="page-footer">
-    <button class="btn btn-ghost" style="width:auto;padding:12px 28px;font-size:16px;" onclick="logout()">
-      ログアウト
-    </button>
+  <div class="content" id="punch-content">
+    <div class="empty-state">打刻画面を読み込み中...</div>
   </div>
 </div>
 
 <!-- ============================================================
-     画面4: 日報入力
+     画面2: 記録
+     ============================================================ -->
+<div id="screen-records" class="screen">
+  <div class="header">
+    <div class="app-title">RECORDS</div>
+    <button class="driver-badge" id="driver-badge-records" onclick="openDriverModal()">
+      <span class="driver-badge-name">---</span>
+      <span class="driver-badge-arrow">▼</span>
+    </button>
+  </div>
+  <div class="content" id="records-content">
+    <div class="empty-state">記録一覧を読み込み中...</div>
+  </div>
+</div>
+
+<!-- ============================================================
+     画面3: 月次集計（管理者のみ）
+     ============================================================ -->
+<div id="screen-monthly" class="screen">
+  <div class="header">
+    <div class="app-title">MONTHLY</div>
+    <button class="driver-badge" id="driver-badge-monthly" onclick="openDriverModal()">
+      <span class="driver-badge-name">---</span>
+      <span class="driver-badge-arrow">▼</span>
+    </button>
+  </div>
+  <div class="content" id="monthly-content">
+    <div class="empty-state">月次集計を読み込み中...</div>
+  </div>
+</div>
+
+<!-- ============================================================
+     画面4: ドライバー管理（管理者のみ）
+     ============================================================ -->
+<div id="screen-drivers" class="screen">
+  <div class="header">
+    <div class="app-title">DRIVERS</div>
+  </div>
+  <div class="content" id="drivers-content">
+    <div class="empty-state">ドライバー管理を読み込み中...</div>
+  </div>
+</div>
+
+<!-- ============================================================
+     画面5: 日報入力
      ============================================================ -->
 <div id="screen-report" class="screen">
-  <div class="page-header">
-    <div id="report-header-name" class="main-header-name"></div>
-    <div id="report-header-date" class="main-header-date"></div>
-  </div>
-  <div class="content">
-
-    <!-- 基本情報 -->
-    <div class="report-section">
-      <div class="section-title">基本情報</div>
-      <div class="form-row">
-        <label class="form-label" for="r-destination">配送地</label>
-        <input id="r-destination" class="form-input" type="text" placeholder="例：東京都新宿区">
-      </div>
-      <div class="form-2col">
-        <div>
-          <label class="form-label" for="r-depart">出発時刻</label>
-          <input id="r-depart" class="form-input" type="time">
-        </div>
-        <div>
-          <label class="form-label" for="r-return">帰着時刻</label>
-          <input id="r-return" class="form-input" type="time">
-        </div>
-      </div>
-    </div>
-
-    <!-- メーター -->
-    <div class="report-section">
-      <div class="section-title">メーター記録</div>
-      <div class="form-2col">
-        <div>
-          <label class="form-label" for="r-start-meter">開始メーター (km)</label>
-          <input id="r-start-meter" class="form-input" type="number" inputmode="numeric"
-                 placeholder="0" oninput="calcDistance()">
-        </div>
-        <div>
-          <label class="form-label" for="r-end-meter">終了メーター (km)</label>
-          <input id="r-end-meter" class="form-input" type="number" inputmode="numeric"
-                 placeholder="0" oninput="calcDistance()">
-        </div>
-      </div>
-      <div class="form-row">
-        <label class="form-label">走行距離（自動計算）</label>
-        <input id="r-distance" class="form-input" type="text" readonly placeholder="メーターを入力すると自動計算">
-      </div>
-    </div>
-
-    <!-- アルコールチェック -->
-    <div class="report-section">
-      <div class="section-title">アルコールチェック</div>
-
-      <!-- 乗務前 -->
-      <div class="alco-heading">乗務前</div>
-      <div class="form-row">
-        <label class="form-label" for="r-alc-b-method">確認方法</label>
-        <select id="r-alc-b-method" class="form-select">
-          <option value="">選択してください</option>
-          <option value="アルコール検知器">アルコール検知器</option>
-          <option value="対面">対面</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <label class="form-label" for="r-alc-b-result">酒気帯びの有無</label>
-        <select id="r-alc-b-result" class="form-select">
-          <option value="">選択してください</option>
-          <option value="なし">なし</option>
-          <option value="あり">あり</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <label class="form-label" for="r-alc-b-checker">確認者</label>
-        <select id="r-alc-b-checker" class="form-select">
-          <option value="">選択してください</option>
-        </select>
-      </div>
-
-      <hr class="alco-divider">
-
-      <!-- 乗務後 -->
-      <div class="alco-heading">乗務後</div>
-      <div class="form-row">
-        <label class="form-label" for="r-alc-a-method">確認方法</label>
-        <select id="r-alc-a-method" class="form-select">
-          <option value="">選択してください</option>
-          <option value="アルコール検知器">アルコール検知器</option>
-          <option value="対面">対面</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <label class="form-label" for="r-alc-a-result">酒気帯びの有無</label>
-        <select id="r-alc-a-result" class="form-select">
-          <option value="">選択してください</option>
-          <option value="なし">なし</option>
-          <option value="あり">あり</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <label class="form-label" for="r-alc-a-checker">確認者</label>
-        <select id="r-alc-a-checker" class="form-select">
-          <option value="">選択してください</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- 特記事項 -->
-    <div class="report-section">
-      <div class="section-title">特記事項</div>
-      <div class="toggle-row">
-        <span class="toggle-label">宿泊あり</span>
-        <label class="toggle-switch">
-          <input type="checkbox" id="r-lodging">
-          <div class="toggle-slider"></div>
-        </label>
-      </div>
-      <div class="form-row">
-        <label class="form-label" for="r-other">その他・メモ</label>
-        <textarea id="r-other" class="form-input" rows="3" placeholder="特記事項があれば入力"></textarea>
-      </div>
-    </div>
-
-    <button class="btn btn-primary" onclick="confirmSaveReport()" style="margin-bottom:28px;">
-      日報を保存する
+  <div class="header">
+    <div class="app-title">REPORT</div>
+    <button class="driver-badge" id="driver-badge-report" onclick="openDriverModal()">
+      <span class="driver-badge-name">---</span>
+      <span class="driver-badge-arrow">▼</span>
     </button>
-
   </div>
-  <div class="page-footer">
-    <button class="btn btn-ghost" style="width:auto;padding:12px 28px;font-size:16px;" onclick="goBackToMain()">
-      打刻画面にもどる
-    </button>
+  <div class="content" id="report-content">
+    <div class="empty-state">日報入力を読み込み中...</div>
   </div>
 </div>
 
 <!-- ============================================================
-     画面5: 管理者（PHASE 2以降で実装）
+     画面6: 報告事項
      ============================================================ -->
-<div id="screen-admin" class="screen">
-  <div class="page-header">
-    <h1>管理者</h1>
+<div id="screen-horeport" class="screen">
+  <div class="header">
+    <div class="app-title">HOE-REPORT</div>
+    <button class="driver-badge" id="driver-badge-horeport" onclick="openDriverModal()">
+      <span class="driver-badge-name">---</span>
+      <span class="driver-badge-arrow">▼</span>
+    </button>
   </div>
-  <div class="placeholder-box">
-    <div>この画面は次のフェーズで実装します</div>
-    <button class="back-btn" onclick="showScreen('screen-select')">もどる</button>
+  <div class="content" id="horeport-content">
+    <div class="empty-state">報告事項を読み込み中...</div>
   </div>
 </div>
+
+<!-- ============================================================
+     ドライバー選択モーダル
+     ============================================================ -->
+<div id="driver-modal" class="modal-overlay">
+  <div class="modal-sheet">
+    <div class="modal-title">ドライバーを選択</div>
+    <div id="driver-modal-list"></div>
+    <button class="btn btn-ghost btn-full mt-16" onclick="closeDriverModal()">閉じる</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     ボトムナビゲーション
+     ============================================================ -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" data-screen="screen-punch"   onclick="navTo('screen-punch')">
+    <span class="nav-icon">⏱</span>
+    <span class="nav-label">打刻</span>
+  </button>
+  <button class="nav-btn" data-screen="screen-records"  onclick="navTo('screen-records')">
+    <span class="nav-icon">📋</span>
+    <span class="nav-label">記録</span>
+  </button>
+  <button class="nav-btn" data-screen="screen-report"   onclick="navTo('screen-report')">
+    <span class="nav-icon">📝</span>
+    <span class="nav-label">日報</span>
+  </button>
+  <button class="nav-btn" data-screen="screen-horeport" onclick="navTo('screen-horeport')">
+    <span class="nav-icon">💬</span>
+    <span class="nav-label">報告</span>
+  </button>
+  <button class="nav-btn" id="nav-monthly" data-screen="screen-monthly" onclick="navTo('screen-monthly')" style="display:none;">
+    <span class="nav-icon">📊</span>
+    <span class="nav-label">月次</span>
+  </button>
+  <button class="nav-btn" id="nav-drivers" data-screen="screen-drivers" onclick="navTo('screen-drivers')" style="display:none;">
+    <span class="nav-icon">👤</span>
+    <span class="nav-label">管理</span>
+  </button>
+</nav>
 
 <!-- ============================================================
      JavaScript
      ============================================================ -->
 <script>
+'use strict';
+
+// ============================================================
+// 定数・設定
+// ============================================================
+const STORAGE_KEY    = 'driver_attendance_v2';
+const DRIVERS_KEY    = 'driver_list_v1';
+const CUR_DRIVER_KEY = 'current_driver_v1';
+const CHECKERS_KEY   = 'checker_list_v1';
+const DAY_NAMES      = ['日','月','火','水','木','金','土'];
+const CACHE_TTL_MS   = 5 * 60 * 1000; // 5分
+
 // ============================================================
 // アプリ状態
 // ============================================================
-const state = {
-  drivers:       [],
-  currentDriver: null,
-  todayRecord:   null,
+let appData         = {};   // { [driverId]: { [dateKey]: recordObj } }
+let drivers         = [];
+let currentDriverId = '';
+let _checkerCache   = null;
+let _loadedPeriods  = {};   // { "driverId_from_to": timestamp }
+
+// モードフラグ
+let _adminMode     = false;
+let _dedicatedMode = false; // ドライバー専用URLモード
+
+// URLパラメータ
+const _urlParams   = new URLSearchParams(window.location.search);
+const _urlDriverId = _urlParams.get('driver');
+const _urlMode     = _urlParams.get('mode');
+// セキュリティ修正：管理者キーは URL に含めず、フォームから POST で送信する
+
+// ============================================================
+// localStorage フォールバック付きストレージ
+// ============================================================
+const _mem = {};
+const _store = {
+  getItem(k)    { try { return localStorage.getItem(k); }    catch(e) { return _mem[k] ?? null; } },
+  setItem(k, v) { try { localStorage.setItem(k, v); }        catch(e) { _mem[k] = v; } },
+  removeItem(k) { try { localStorage.removeItem(k); }        catch(e) { delete _mem[k]; } },
+  clear()       { try { localStorage.clear(); }              catch(e) { Object.keys(_mem).forEach(k => delete _mem[k]); } }
 };
+
+// ============================================================
+// GAS / モックAPI 通信
+// ============================================================
+function fetchWithTimeout(url, options, ms) {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
+// GET型リクエスト（実GAS用。モックサーバーにはPOSTを使う）
+async function gasGet(params) {
+  const url = CONFIG.GAS_URL + '?' + new URLSearchParams(params).toString();
+  const res  = await fetchWithTimeout(url, {}, 15000);
+  return res.json();
+}
+
+// POST型リクエスト（モックサーバー・実GAS共通）
+async function gasPost(data) {
+  const res  = await fetchWithTimeout(CONFIG.GAS_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(data)
+  }, 15000);
+  const json = await res.json();
+  if (json && json.error) throw new Error(json.error);
+  return json;
+}
 
 // ============================================================
 // 画面遷移
 // ============================================================
+let _currentScreen = 'screen-punch';
+
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+  _currentScreen = id;
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.screen === id);
+  });
   window.scrollTo(0, 0);
+}
+
+function navTo(id) {
+  showScreen(id);
+  // 画面ごとの更新処理（Part 2〜4 で実装）
+  if (id === 'screen-punch')    renderPunchScreen && renderPunchScreen();
+  if (id === 'screen-records')  renderRecords     && renderRecords();
+  if (id === 'screen-monthly')  renderMonthly     && renderMonthly();
+  if (id === 'screen-report')   renderReportForm  && renderReportForm();
+  if (id === 'screen-horeport') renderHoReport    && renderHoReport();
+  if (id === 'screen-drivers')  renderDrivers     && renderDrivers();
 }
 
 // ============================================================
@@ -881,14 +1000,15 @@ function showToast(msg, isError = false) {
 }
 
 // ============================================================
-// 確認モーダル
+// 確認ダイアログ
 // ============================================================
-function openConfirm(title, body, onOk) {
+function openConfirm(title, body, onOk, okLabel = '実行', isDestructive = true) {
   document.getElementById('confirm-title').textContent = title;
   document.getElementById('confirm-body').textContent  = body;
-  const overlay = document.getElementById('confirm-overlay');
-  overlay.classList.add('open');
   const btn = document.getElementById('confirm-ok');
+  btn.textContent = okLabel;
+  btn.className   = 'confirm-btn ' + (isDestructive ? 'danger' : 'primary');
+  document.getElementById('confirm-overlay').classList.add('open');
   btn.onclick = () => { closeConfirm(); onOk(); };
 }
 function closeConfirm() {
@@ -907,402 +1027,285 @@ function hideLoading() {
 }
 
 // ============================================================
-// GAS / モックAPI 通信
+// ナビゲーション表示制御
 // ============================================================
-async function gasPost(action, params = {}) {
-  const res = await fetch(CONFIG.GAS_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ action, ...params })
+function updateNavVisibility() {
+  document.getElementById('nav-monthly').style.display =
+    _adminMode ? 'flex' : 'none';
+  document.getElementById('nav-drivers').style.display =
+    (_adminMode && !_dedicatedMode) ? 'flex' : 'none';
+}
+
+// ============================================================
+// ドライバー関連
+// ============================================================
+function getDriverName(id) {
+  const d = drivers.find(d => d.id === id);
+  return d ? d.name : (id || '---');
+}
+
+function setCurrentDriver(id) {
+  currentDriverId = id;
+  try { _store.setItem(CUR_DRIVER_KEY, id); } catch(e) {}
+  updateDriverBadges();
+}
+
+function updateDriverBadges() {
+  const name = getDriverName(currentDriverId) || 'ドライバー選択';
+  document.querySelectorAll('.driver-badge-name').forEach(el => {
+    el.textContent = name;
   });
-  if (!res.ok) throw new Error('通信エラー: ' + res.status);
-  const json = await res.json();
-  if (json.error) throw new Error(json.error);
-  return json;
-}
-
-// ============================================================
-// 画面1: ドライバー選択
-// ============================================================
-async function loadDrivers() {
-  const list = document.getElementById('driver-list');
-  list.innerHTML = '<div class="loading-txt">読み込み中...</div>';
-
-  try {
-    const res    = await gasPost('getDrivers');
-    state.drivers = res.drivers || [];
-
-    if (state.drivers.length === 0) {
-      list.innerHTML = '<div class="error-box">ドライバーが登録されていません</div>';
-      return;
-    }
-
-    list.innerHTML = state.drivers.map(d =>
-      `<button class="driver-btn" onclick="selectDriver('${d.id}')">
-        ${d.name}
-      </button>`
-    ).join('');
-
-  } catch (err) {
-    list.innerHTML = `
-      <div class="error-box">
-        読み込みに失敗しました
-        <small>${err.message}</small>
-        <button class="btn btn-secondary" onclick="loadDrivers()" style="margin-top:16px;">
-          再読み込み
-        </button>
-      </div>`;
-  }
-}
-
-function selectDriver(driverId) {
-  state.currentDriver = state.drivers.find(d => d.id === driverId) || null;
-  if (!state.currentDriver) return;
-  enterPasswordScreen();
-}
-
-function goAdminLogin() {
-  showScreen('screen-admin');
-}
-
-// ============================================================
-// 画面3: メイン打刻
-// ============================================================
-function enterMainScreen() {
-  // ヘッダーにドライバー名と日付をセット
-  document.getElementById('main-header-name').textContent = state.currentDriver.name;
-  document.getElementById('main-header-date').textContent = formatDateJP(new Date());
-  showScreen('screen-main');
-  loadMainStatus();
-}
-
-async function loadMainStatus() {
-  try {
-    const res = await gasPost('getStatus', { driverId: state.currentDriver.id });
-    state.todayRecord = res.record;
-    renderMainScreen(res.status, res.record);
-  } catch (err) {
-    showToast('状態の取得に失敗しました', true);
-  }
-}
-
-function renderMainScreen(status, record) {
-  const card   = document.getElementById('main-status-card');
-  const action = document.getElementById('action-area');
-
-  // ステータスカードの色クラスを切り替え
-  card.className = 'status-card ' + status;
-
-  let badgeText = { none: '未打刻', working: '出勤中', done: '退勤済み' }[status] || '不明';
-  let detailHTML = '';
-
-  if (status === 'none') {
-    detailHTML = '<div style="color:var(--text2);font-size:16px;margin-top:4px;">本日の出勤打刻がありません</div>';
-  } else if (status === 'working' && record) {
-    const alc = record.alcoholCheck;
-    detailHTML = `<div class="status-times">
-      出勤: <strong>${record.clockIn}</strong><br>
-      ${alc
-        ? `アルコール: <strong>${Number(alc.value).toFixed(2)} mg/L</strong>（${alc.result === 'pass' ? '正常' : '検知'}）`
-        : 'アルコール: <strong style="color:var(--warning);">未記録</strong>'}
-    </div>`;
-  } else if (status === 'done' && record) {
-    const alc = record.alcoholCheck;
-    detailHTML = `<div class="status-times">
-      出勤: <strong>${record.clockIn}</strong><br>
-      退勤: <strong>${record.clockOut}</strong><br>
-      ${alc
-        ? `アルコール: <strong>${Number(alc.value).toFixed(2)} mg/L</strong>（${alc.result === 'pass' ? '正常' : '検知'}）`
-        : ''}
-    </div>`;
-  }
-
-  card.innerHTML = `<div class="status-badge">${badgeText}</div>${detailHTML}`;
-
-  // アクションボタンを状態で切り替え
-  if (status === 'none') {
-    action.innerHTML = `
-      <button class="action-btn clock-in" onclick="confirmClockIn()">出勤打刻</button>`;
-  } else if (status === 'working') {
-    action.innerHTML = `
-      <button class="action-btn alco-check" onclick="openAlcoModal()">アルコールチェック</button>
-      <button class="action-btn clock-out"  onclick="confirmClockOut()">退勤打刻</button>`;
-  } else {
-    action.innerHTML = `<div class="done-msg">本日の打刻は完了しています</div>`;
-  }
-}
-
-function formatDateJP(d) {
-  const week = ['日','月','火','水','木','金','土'];
-  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${week[d.getDay()]}）`;
-}
-
-// ── 出勤打刻 ──
-function confirmClockIn() {
-  openConfirm(
-    '出勤打刻',
-    '出勤を記録します。よろしいですか？',
-    async () => {
-      try {
-        showLoading('打刻中...');
-        await gasPost('clockIn', { driverId: state.currentDriver.id });
-        hideLoading();
-        showToast('出勤打刻しました');
-        await loadMainStatus();
-      } catch (err) {
-        hideLoading();
-        showToast(err.message, true);
-      }
-    }
-  );
-}
-
-// ── 退勤打刻 ──
-function confirmClockOut() {
-  openConfirm(
-    '退勤打刻',
-    '退勤を記録します。よろしいですか？',
-    async () => {
-      try {
-        showLoading('打刻中...');
-        await gasPost('clockOut', { driverId: state.currentDriver.id });
-        hideLoading();
-        showToast('退勤打刻しました');
-        await loadMainStatus();
-      } catch (err) {
-        hideLoading();
-        showToast(err.message, true);
-      }
-    }
-  );
-}
-
-// ── アルコールチェック ──
-function openAlcoModal() {
-  document.getElementById('alco-input').value = '';
-  document.getElementById('alco-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('alco-input').focus(), 300);
-}
-
-function closeAlcoModal() {
-  document.getElementById('alco-overlay').classList.remove('open');
-}
-
-function confirmAlcoCheck() {
-  const raw = document.getElementById('alco-input').value.trim();
-  if (raw === '') { showToast('検査値を入力してください', true); return; }
-  const num = parseFloat(raw);
-  if (isNaN(num) || num < 0) { showToast('正しい数値を入力してください', true); return; }
-
-  closeAlcoModal();
-  const label = num === 0
-    ? `0.00 mg/L（正常）`
-    : `${num.toFixed(2)} mg/L（検知あり）`;
-
-  openConfirm(
-    'アルコールチェック記録',
-    `検査値: ${label}\nこの内容で記録しますか？`,
-    async () => {
-      try {
-        showLoading('記録中...');
-        await gasPost('alcoholCheck', { driverId: state.currentDriver.id, value: num });
-        hideLoading();
-        showToast('アルコールチェックを記録しました');
-        await loadMainStatus();
-      } catch (err) {
-        hideLoading();
-        showToast(err.message, true);
-      }
-    }
-  );
-}
-
-// ── ログアウト ──
-function logout() {
-  state.currentDriver = null;
-  state.todayRecord   = null;
-  showScreen('screen-select');
-}
-
-// ============================================================
-// 画面4: 日報入力
-// ============================================================
-function goReport() {
-  document.getElementById('report-header-name').textContent = state.currentDriver.name;
-  document.getElementById('report-header-date').textContent = formatDateJP(new Date());
-  loadReportCheckers();
-  showScreen('screen-report');
-}
-
-async function loadReportCheckers() {
-  try {
-    const res = await gasPost('getCheckers');
-    const opts = (res.checkers || []).map(c =>
-      `<option value="${c.name}">${c.name}</option>`
-    ).join('');
-    ['r-alc-b-checker', 'r-alc-a-checker'].forEach(id => {
-      const sel = document.getElementById(id);
-      const cur = sel.value;
-      sel.innerHTML = '<option value="">選択してください</option>' + opts;
-      if (cur) sel.value = cur;
+  // 専用モードはバッジをクリック不可に
+  if (_dedicatedMode) {
+    document.querySelectorAll('.driver-badge').forEach(btn => {
+      btn.onclick = null;
+      btn.style.cursor = 'default';
+      const arrow = btn.querySelector('.driver-badge-arrow');
+      if (arrow) arrow.style.display = 'none';
     });
-  } catch (_) { /* 確認者取得失敗は非致命的 */ }
+  }
 }
 
-function calcDistance() {
-  const s = parseInt(document.getElementById('r-start-meter').value) || 0;
-  const e = parseInt(document.getElementById('r-end-meter').value)   || 0;
-  const d = e > s ? e - s : 0;
-  document.getElementById('r-distance').value = d > 0 ? d + ' km' : '';
+// ============================================================
+// ドライバー選択モーダル
+// ============================================================
+function openDriverModal() {
+  if (_dedicatedMode) return;
+  const list = document.getElementById('driver-modal-list');
+  list.innerHTML = drivers.map(d => `
+    <div class="driver-item ${d.id === currentDriverId ? 'selected' : ''}"
+         onclick="selectDriver('${d.id}')">
+      <div>
+        <div class="driver-item-name">${d.name}</div>
+        <div class="driver-item-id">${d.id}</div>
+      </div>
+    </div>
+  `).join('') || '<div class="empty-state">ドライバーが登録されていません</div>';
+  document.getElementById('driver-modal').classList.add('open');
+}
+function closeDriverModal() {
+  document.getElementById('driver-modal').classList.remove('open');
+}
+function selectDriver(id) {
+  setCurrentDriver(id);
+  closeDriverModal();
+  // 現在の画面を更新
+  navTo(_currentScreen);
 }
 
-function getReportData() {
-  const startMeter = parseInt(document.getElementById('r-start-meter').value) || null;
-  const endMeter   = parseInt(document.getElementById('r-end-meter').value)   || null;
-  const distance   = (startMeter && endMeter && endMeter > startMeter) ? endMeter - startMeter : null;
-  const jst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
-  const dateISO = jst.toISOString().split('T')[0];
-
-  return {
-    action:      'saveRecord',
-    driverId:    state.currentDriver.id,
-    driverName:  state.currentDriver.name,
-    date:        dateISO,
-    destination: document.getElementById('r-destination').value.trim(),
-    departTime:  document.getElementById('r-depart').value,
-    returnTime:  document.getElementById('r-return').value,
-    startMeter,
-    endMeter,
-    distance,
-    alcBefore: {
-      method:  document.getElementById('r-alc-b-method').value,
-      result:  document.getElementById('r-alc-b-result').value,
-      checker: document.getElementById('r-alc-b-checker').value,
-    },
-    alcAfter: {
-      method:  document.getElementById('r-alc-a-method').value,
-      result:  document.getElementById('r-alc-a-result').value,
-      checker: document.getElementById('r-alc-a-checker').value,
-    },
-    lodging: document.getElementById('r-lodging').checked,
-    other:   document.getElementById('r-other').value.trim(),
-  };
+// ============================================================
+// キャッシュ管理
+// ============================================================
+function _saveDriversCache(list) {
+  try { _store.setItem(DRIVERS_KEY, JSON.stringify({ data: list, ts: Date.now() })); } catch(e) {}
+}
+function _loadDriversCache() {
+  try {
+    const raw = _store.getItem(DRIVERS_KEY);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    return (Date.now() - ts < CACHE_TTL_MS) ? data : null;
+  } catch(e) { return null; }
+}
+function _saveCheckerCache(list) {
+  try { _store.setItem(CHECKERS_KEY, JSON.stringify(list)); } catch(e) {}
+}
+function _loadCheckerCache() {
+  try {
+    const raw = _store.getItem(CHECKERS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
 }
 
-function confirmSaveReport() {
-  openConfirm(
-    '日報を保存',
-    '入力した内容で日報を保存します。よろしいですか？',
-    async () => {
-      try {
-        showLoading('保存中...');
-        const data = getReportData();
-        await gasPost('saveRecord', data);
-        hideLoading();
-        showToast('日報を保存しました');
-        goBackToMain();
-      } catch (err) {
-        hideLoading();
-        showToast('保存に失敗しました', true);
-      }
+// ============================================================
+// GAS データロード
+// ============================================================
+async function loadInitFromGAS() {
+  try {
+    const res = await gasPost({ action: 'getInit' });
+    if (res.drivers)  { drivers = res.drivers;  _saveDriversCache(drivers); }
+    if (res.checkers) { _checkerCache = res.checkers; _saveCheckerCache(res.checkers); }
+  } catch(e) {
+    console.error('Init error:', e);
+  }
+}
+
+async function loadRecordsFromGAS(from, to, forceReload = false) {
+  const key = `${currentDriverId}_${from}_${to}`;
+  const now  = Date.now();
+  if (!forceReload && _loadedPeriods[key] && now - _loadedPeriods[key] < CACHE_TTL_MS) return;
+
+  try {
+    const res = await gasPost({
+      action:   'getRecords',
+      driverId: currentDriverId,
+      from, to
+    });
+    if (res.records) {
+      res.records.forEach(r => {
+        if (!appData[r.driverId]) appData[r.driverId] = {};
+        appData[r.driverId][r.date] = r;
+      });
     }
-  );
+    _loadedPeriods[key] = now;
+  } catch(e) {
+    console.error('Records load error:', e);
+    throw e;
+  }
 }
 
-function goBackToMain() {
-  enterMainScreen();
+async function loadRecentRecordsFromGAS(limit = 10, forceReload = false) {
+  try {
+    const res = await gasPost({
+      action:   'getRecentRecords',
+      driverId: currentDriverId,
+      limit
+    });
+    if (res.records) {
+      res.records.forEach(r => {
+        if (!appData[r.driverId]) appData[r.driverId] = {};
+        appData[r.driverId][r.date] = r;
+      });
+    }
+  } catch(e) {
+    console.error('Recent records load error:', e);
+    throw e;
+  }
 }
 
 // ============================================================
-// 画面2: パスワード入力
+// 日付ユーティリティ
 // ============================================================
-let _pwValue = '';
-const PW_MAX  = 8; // 最大桁数
-
-function enterPasswordScreen() {
-  _pwValue = '';
-  document.getElementById('pw-driver-name').textContent = state.currentDriver.name;
-  document.getElementById('pw-error').style.display     = 'none';
-  renderPwDots();
-  showScreen('screen-password');
+function dateKey(d) {
+  if (!d) return '';
+  const jst = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+  return jst.toISOString().split('T')[0];
+}
+function todayKey()     { return dateKey(new Date()); }
+function parseHHMM(s)   {
+  if (!s) return null;
+  const [h, m] = s.split(':').map(Number);
+  return isNaN(h) || isNaN(m) ? null : h * 60 + m;
+}
+function minutesToHM(m) {
+  if (m == null || isNaN(m)) return '---';
+  const h = Math.floor(m / 60);
+  const mm = String(m % 60).padStart(2, '0');
+  return `${h}:${mm}`;
+}
+function formatDateLabel(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${d.getMonth()+1}/${d.getDate()}（${DAY_NAMES[d.getDay()]}）`;
 }
 
-function renderPwDots() {
-  const dots = document.getElementById('pw-dots');
-  if (_pwValue.length === 0) {
-    dots.innerHTML = '<span style="color:var(--text2);font-size:16px;">未入力</span>';
-    return;
-  }
-  dots.innerHTML = Array.from({ length: _pwValue.length }, () =>
-    '<div class="pw-dot filled"></div>'
-  ).join('');
+// 締め期間計算（26日〜翌25日）
+function getPeriod(offset = 0) {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth(); // 0-indexed
+  const day   = now.getDate();
+
+  // 当月25日を過ぎていれば今月26〜来月25、それ以前なら先月26〜今月25
+  let endMonth = day > 25 ? month + 1 : month;
+  let endYear  = year;
+  endMonth += offset;
+  if (endMonth < 0) { endMonth += 12; endYear--; }
+  if (endMonth > 11){ endMonth -= 12; endYear++; }
+
+  const end   = new Date(endYear, endMonth, 25);
+  const start = new Date(endYear, endMonth - 1, 26);
+
+  const label = `${start.getMonth()+1}/${start.getDate()} 〜 ${end.getMonth()+1}/${end.getDate()}`;
+  return { start, end, label };
 }
 
-function pwKey(digit) {
-  if (_pwValue.length >= PW_MAX) return;
-  _pwValue += digit;
-  document.getElementById('pw-error').style.display = 'none';
-  renderPwDots();
-}
+// ============================================================
+// 管理者キー入力
+// ============================================================
+async function submitAdminKey() {
+  const input = document.getElementById('admin-key-input');
+  const key   = input.value.trim();
+  const errEl = document.getElementById('admin-key-error');
+  errEl.style.display = 'none';
 
-function pwBackspace() {
-  if (_pwValue.length === 0) return;
-  _pwValue = _pwValue.slice(0, -1);
-  renderPwDots();
-}
+  if (!key) { errEl.textContent = 'キーを入力してください'; errEl.style.display = 'block'; return; }
 
-function pwClear() {
-  _pwValue = '';
-  document.getElementById('pw-error').style.display = 'none';
-  renderPwDots();
-}
-
-function showPwError(msg) {
-  const el = document.getElementById('pw-error');
-  el.textContent    = msg;
-  el.style.display  = 'block';
-}
-
-async function submitPassword() {
-  if (_pwValue.length === 0) {
-    showPwError('パスワードを入力してください');
-    return;
-  }
-
-  const btn = document.getElementById('pw-submit');
+  const btn = document.getElementById('admin-key-submit');
   btn.disabled = true;
 
   try {
     showLoading('確認中...');
-    const res = await gasPost('verifyPassword', { password: _pwValue });
+    // セキュリティ修正：キーはPOSTボディで送信（URLに含めない）
+    const res = await gasPost({ action: 'verifyAdminKey', key });
     hideLoading();
-
     if (res.success) {
-      _pwValue = ''; // 認証後は即クリア
-      enterMainScreen();
+      _adminMode = true;
+      document.getElementById('screen-admin-key').classList.remove('active');
+      await startApp();
     } else {
-      showPwError('パスワードが正しくありません');
-      _pwValue = '';
-      renderPwDots();
+      errEl.textContent   = '管理者キーが正しくありません';
+      errEl.style.display = 'block';
+      input.value         = '';
     }
-  } catch (err) {
+  } catch(err) {
     hideLoading();
-    showPwError('通信エラーが発生しました');
+    errEl.textContent   = '通信エラーが発生しました';
+    errEl.style.display = 'block';
   } finally {
     btn.disabled = false;
   }
 }
 
-function pwGoBack() {
-  _pwValue = '';
-  showScreen('screen-select');
+// ============================================================
+// アプリ起動
+// ============================================================
+async function startApp() {
+  showLoading('読み込み中...');
+
+  // キャッシュ読み込み
+  const cachedDrivers  = _loadDriversCache();
+  const cachedCheckers = _loadCheckerCache();
+  if (cachedDrivers)  drivers       = cachedDrivers;
+  if (cachedCheckers) _checkerCache = cachedCheckers;
+
+  // GASから最新データを取得
+  await loadInitFromGAS();
+
+  hideLoading();
+
+  // ドライバー設定
+  if (_urlDriverId) {
+    _dedicatedMode = true;
+    if (!drivers.find(d => d.id === _urlDriverId)) {
+      drivers.push({ id: _urlDriverId, name: '---' });
+    }
+    setCurrentDriver(_urlDriverId);
+  } else {
+    const saved = _store.getItem(CUR_DRIVER_KEY);
+    if (saved && drivers.find(d => d.id === saved)) setCurrentDriver(saved);
+    else if (drivers.length > 0) setCurrentDriver(drivers[0].id);
+  }
+
+  updateNavVisibility();
+  updateDriverBadges();
+
+  // 打刻画面を表示
+  showScreen('screen-punch');
+  // 各画面の初期描画（後のパートで実装）
+  if (typeof renderPunchScreen === 'function') renderPunchScreen();
 }
 
 // ============================================================
 // 初期化
 // ============================================================
 async function init() {
-  await loadDrivers();
+  if (_urlMode === 'admin') {
+    // 管理者モード：キー入力画面を表示
+    document.getElementById('screen-admin-key').classList.add('active');
+    return;
+  }
+  await startApp();
 }
 
 init();
