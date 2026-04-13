@@ -496,6 +496,20 @@ html, body {
   line-height: 1;
 }
 .rec-action-btn.print { color: var(--text2); border-color: var(--border); background: var(--surface2); }
+.record-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.record-times  { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
+.record-time-item { display: flex; flex-direction: column; min-width: 60px; }
+.t-label { font-size: 12px; color: var(--text3); margin-bottom: 2px; }
+.t-val   { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; color: var(--text); }
+.record-hours { margin: 8px 0 4px; display: flex; flex-wrap: wrap; }
+.h-num   { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; line-height: 1.1; }
+.h-label { font-size: 10px; color: var(--text3); }
+.record-tags { display: flex; gap: 4px; align-items: center; }
+.tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.tag.holiday  { background: rgba(244,63,94,0.15);  color: var(--holiday); }
+.tag.night    { background: rgba(129,140,248,0.15); color: var(--night); }
+.tag.overtime { background: rgba(250,204,21,0.15);  color: var(--overtime); }
+.record-note { font-size: 13px; color: var(--text2); margin-top: 6px; }
 
 /* ============================================================
    期間セレクター
@@ -947,7 +961,14 @@ html, body {
     </button>
   </div>
   <div class="content" id="records-content">
-    <div class="empty-state">記録一覧を読み込み中...</div>
+    <div class="period-selector">
+      <button class="period-btn" onclick="changePeriod(-1)">‹</button>
+      <div class="period-label" id="recordsPeriodLabel">—</div>
+      <button class="period-btn" onclick="changePeriod(1)">›</button>
+      <button class="period-btn" onclick="renderRecords(true)" title="GASから再取得">↻</button>
+    </div>
+    <div id="recordsList"></div>
+    <button class="btn btn-ghost mt-16" style="width:100%;" onclick="showToast('追加はパート4で実装予定')">＋ 新規追加</button>
   </div>
 </div>
 
@@ -1519,6 +1540,207 @@ function getPeriod(offset = 0) {
 
   const label = `${start.getMonth()+1}/${start.getDate()} 〜 ${end.getMonth()+1}/${end.getDate()}`;
   return { start, end, label };
+}
+
+// ============================================================
+// 記録一覧（Part 3）
+// ============================================================
+const NIGHT_START        = 22 * 60; // 22:00 in minutes
+const NIGHT_END          =  5 * 60; //  5:00 in minutes
+const OVERTIME_THRESHOLD = 470;     // 7h50m in minutes
+
+const isWeekend = ds => { const d = new Date(ds + 'T00:00:00').getDay(); return d === 0 || d === 6; };
+
+function minutesToH(m) {
+  if (!m || m <= 0) return '0:00';
+  const h   = Math.floor(m / 60);
+  const min = m % 60;
+  return h + ':' + String(min).padStart(2, '0');
+}
+
+function getDatesInPeriod(period) {
+  const dates = [];
+  const cur   = new Date(period.start);
+  while (cur <= period.end) { dates.push(dateKey(cur)); cur.setDate(cur.getDate() + 1); }
+  return dates;
+}
+
+function countNightMins(s, e) {
+  let n = 0;
+  for (let t = s; t < e; t++) {
+    const tm = t % (24 * 60);
+    if (tm >= NIGHT_START || tm < NIGHT_END) n++;
+  }
+  return n;
+}
+
+function calcBreakMins(breaks, manualBreaks) {
+  const timed = (breaks || []).reduce((sum, b) => {
+    if (!b.start || !b.end) return sum;
+    let s = parseHHMM(b.start), e = parseHHMM(b.end);
+    if (e < s) e += 24 * 60;
+    return sum + (e - s);
+  }, 0);
+  const manual = (manualBreaks || []).reduce((sum, b) => sum + (Number(b.mins) || 0), 0);
+  return timed + manual;
+}
+
+function calcRecord(rec) {
+  const start = parseHHMM(rec.clockIn || rec.start);
+  const end   = parseHHMM(rec.clockOut || rec.end);
+  if (start === null || end === null) return null;
+  const endAdj = end < start ? end + 24 * 60 : end;
+
+  // 休憩区間を整理
+  const breaks = (rec.breaks || []).filter(b => b.start && b.end).map(b => {
+    let bs = parseHHMM(b.start), be = parseHHMM(b.end);
+    if (bs < start) bs += 1440;
+    if (be < bs)    be += 1440;
+    return { s: bs, e: be };
+  }).sort((a, b) => a.s - b.s);
+
+  // 稼働区間を列挙
+  const segs = [];
+  let cursor = start;
+  for (const br of breaks) {
+    if (br.s > cursor) segs.push({ s: cursor, e: br.s });
+    cursor = br.e;
+  }
+  if (endAdj > cursor) segs.push({ s: cursor, e: endAdj });
+
+  // 通常時間・深夜時間を計算
+  let workMins = 0, nightMins = 0;
+  for (const seg of segs) {
+    const n = countNightMins(seg.s, seg.e);
+    nightMins += n;
+    workMins  += (seg.e - seg.s) - n;
+  }
+  const breakMins  = calcBreakMins(rec.breaks, rec.manualBreaks);
+  const manualMins = (rec.manualBreaks || []).reduce((s, b) => s + (Number(b.mins) || 0), 0);
+  workMins = Math.max(0, workMins - manualMins);
+
+  const isHoliday   = (rec.type === 'holiday' || isWeekend(rec.date || rec.startDate || ''));
+  const overtime    = isHoliday ? 0 : Math.max(0, workMins - OVERTIME_THRESHOLD);
+  const normalMins  = isHoliday ? 0 : workMins - overtime;
+  const holidayMins = isHoliday ? workMins : 0;
+  const totalDriveMins = workMins + nightMins;
+  return { totalMins: workMins, normalMins, overtime, nightMins, breakMins, holidayMins, totalDriveMins };
+}
+
+let _currentPeriodOffset = 0;
+
+function changePeriod(delta) {
+  _currentPeriodOffset += delta;
+  renderRecords(true);
+}
+
+async function renderRecords(forceReload = false) {
+  const period = getPeriod(_currentPeriodOffset);
+  const from   = dateKey(period.start);
+  const to     = dateKey(period.end);
+
+  const labelEl = document.getElementById('recordsPeriodLabel');
+  if (labelEl) labelEl.textContent = period.label;
+
+  const list = document.getElementById('recordsList');
+  if (!list) return;
+
+  showLoading('記録を読み込み中');
+  try {
+    await loadRecordsFromGAS(from, to, forceReload);
+  } catch (e) {
+    hideLoading();
+    showToast('記録の読み込みに失敗しました', true);
+    return;
+  }
+  hideLoading();
+
+  const driverData = appData[currentDriverId] || {};
+  const records    = getDatesInPeriod(period)
+    .map(d => ({ date: d, rec: driverData[d] || null }))
+    .filter(x => x.rec && (x.rec.clockIn || x.rec.start))
+    .reverse();
+
+  if (!records.length) {
+    list.innerHTML = '<div class="empty-state">この期間の記録はありません</div>';
+    return;
+  }
+
+  list.innerHTML = records.map(({ date, rec }) => {
+    const calc     = calcRecord(rec);
+    const dow      = DAY_NAMES[new Date(date + 'T00:00:00').getDay()];
+    const [, mo, da] = date.split('-');
+    const isHol    = rec.type === 'holiday' || isWeekend(date);
+    const clockIn  = rec.clockIn  || rec.start  || '—';
+    const clockOut = rec.clockOut || rec.end    || '—';
+
+    const tags = [];
+    if (isHol)                tags.push('<span class="tag holiday">休出</span>');
+    if (calc?.nightMins > 0)  tags.push('<span class="tag night">深夜</span>');
+    if (calc?.overtime  > 0)  tags.push('<span class="tag overtime">残業</span>');
+
+    const hoursHtml = calc ? `<div class="record-hours">
+      ${_adminMode ? `<div class="hour-chip normal"><div class="h-num">${minutesToH(calc.normalMins)}</div><div class="h-label">通常h</div></div>
+        <div class="hour-chip over"><div class="h-num">${minutesToH(calc.overtime)}</div><div class="h-label">残業h</div></div>
+        <div class="hour-chip night-h"><div class="h-num">${minutesToH(calc.nightMins)}</div><div class="h-label">深夜h</div></div>
+        ${isHol ? `<div class="hour-chip hol"><div class="h-num">${minutesToH(calc.holidayMins)}</div><div class="h-label">休出h</div></div>` : ''}` : ''}
+      <div class="hour-chip drive"><div class="h-num">${minutesToH(calc.totalDriveMins)}</div><div class="h-label">総運行h</div></div>
+      ${calc.breakMins > 0 ? `<div class="hour-chip break-h"><div class="h-num">${minutesToH(calc.breakMins)}</div><div class="h-label">休憩h</div></div>` : ''}
+    </div>` : '';
+
+    const mileageHtml = (rec.startMileage || rec.endMileage) ? `<div class="record-times">
+      ${rec.startMileage ? `<div class="record-time-item"><div class="t-label">始業KM</div><div class="t-val">${Number(rec.startMileage).toLocaleString()}</div></div>` : ''}
+      ${rec.endMileage   ? `<div class="record-time-item"><div class="t-label">到着KM</div><div class="t-val">${Number(rec.endMileage).toLocaleString()}</div></div>` : ''}
+      ${rec.startMileage && rec.endMileage ? `<div class="record-time-item"><div class="t-label">走行KM</div><div class="t-val" style="color:var(--info)">${(Number(rec.endMileage) - Number(rec.startMileage)).toLocaleString()}</div></div>` : ''}
+    </div>` : '';
+
+    const deleteBtn = _adminMode
+      ? `<button class="rec-action-btn" style="color:var(--danger);border-color:rgba(239,68,68,0.4);" onclick="deleteRecordCard('${date}')">削除</button>`
+      : '';
+
+    return `<div class="record-card">
+      <div class="record-header">
+        <div>
+          <div class="record-date">${mo}/${da}(${dow})</div>
+          <div class="record-time">${clockIn} → ${clockOut}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+          <div class="record-tags">${tags.join('')}</div>
+          <div class="rec-actions">
+            <button class="rec-action-btn" onclick="showToast('編集はパート4で実装予定')">編集</button>
+            ${deleteBtn}
+          </div>
+        </div>
+      </div>
+      ${hoursHtml}
+      ${mileageHtml}
+      ${rec.destination ? `<div class="record-note">🚚 ${rec.destination}</div>` : ''}
+      ${rec.note        ? `<div class="record-note">📝 ${rec.note}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function deleteRecordCard(date) {
+  openConfirm(
+    '記録を削除しますか？',
+    `${date} の記録を削除します。この操作は取り消せません。`,
+    async () => {
+      showLoading('削除中');
+      try {
+        const res = await gasPost({ action: 'deleteRecord', driverId: currentDriverId, date });
+        if (!res.success) throw new Error(res.error || '削除失敗');
+        if (appData[currentDriverId]) delete appData[currentDriverId][date];
+        showToast('✓ 記録を削除しました');
+        renderRecords(false);
+      } catch (e) {
+        showToast('削除に失敗しました', true);
+      } finally {
+        hideLoading();
+      }
+    },
+    '削除',
+    true
+  );
 }
 
 // ============================================================
