@@ -884,6 +884,46 @@ html, body {
 .alc-date-display.before { background: rgba(59,130,246,0.12); color: var(--info); }
 .alc-date-display.after  { background: rgba(34,197,94,0.12);  color: var(--success); }
 .alc-confirmed-time { font-size: 22px; font-weight: 700; margin-top: 2px; }
+
+  /* ── MONTHLY PDF MODAL ── */
+  .confirm-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); z-index: 400; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .confirm-overlay.open { opacity: 1; pointer-events: all; }
+  .confirm-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px 20px 20px; width: 100%; max-width: 320px; transform: scale(0.95); transition: transform 0.2s; }
+  .confirm-overlay.open .confirm-box { transform: scale(1); }
+  .confirm-msg { font-size: 15px; font-weight: 700; text-align: center; margin-bottom: 6px; line-height: 1.5; }
+  .confirm-sub { font-size: 12px; color: var(--text2); text-align: center; margin-bottom: 20px; line-height: 1.5; }
+  .confirm-btns { display: flex; gap: 10px; }
+  .confirm-btn-cancel { flex: 1; padding: 13px; background: var(--surface2); border: none; border-radius: var(--radius-sm); color: var(--text2); font-size: 14px; cursor: pointer; font-family: 'Noto Sans JP', sans-serif; }
+  .confirm-btn-ok { flex: 1; padding: 13px; background: var(--accent); border: none; border-radius: var(--radius-sm); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Noto Sans JP', sans-serif; }
+  .confirm-btn-ok.danger { background: var(--danger); }
+
+  /* ── PRINT OVERLAY ── */
+  #printOverlay { display: none; }
+  @media print {
+    body > *:not(#printOverlay) { display: none !important; }
+    #printOverlay { display: block !important; }
+    @page { size: A4 portrait; margin: 12mm 14mm; }
+    #printOverlay * { box-sizing: border-box; margin: 0; padding: 0; }
+    #printOverlay { font-family: 'Hiragino Sans','Meiryo',sans-serif; font-size: 9.5pt; color: #000; line-height: 1.4; }
+    #printOverlay h1 { text-align: center; font-size: 17pt; letter-spacing: 6px; border-bottom: 2px solid #000; padding-bottom: 3mm; margin-bottom: 4mm; }
+    #printOverlay .pr-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12mm; }
+    #printOverlay .pr-info-row { display: flex; gap: 6px; align-items: baseline; }
+    #printOverlay .pr-lbl { font-weight: bold; white-space: nowrap; min-width: 70px; font-size: 8.5pt; color: #444; }
+    #printOverlay .pr-val { font-size: 10pt; }
+    #printOverlay h2 { font-size: 9.5pt; font-weight: bold; background: #222 !important; color: #fff !important; padding: 2px 7px; letter-spacing: 1px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #printOverlay table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+    #printOverlay th, #printOverlay td { border: 0.5px solid #888; padding: 2.5px 4px; vertical-align: top; }
+    #printOverlay th { background: #e8e8e8 !important; font-weight: bold; text-align: center; white-space: nowrap; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #printOverlay .c { text-align: center; width: 20px; }
+    #printOverlay .r { text-align: right; }
+    #printOverlay .place { width: 28%; }
+    #printOverlay .empty { text-align: center; color: #999; font-style: italic; padding: 4px; }
+    #printOverlay .total-row td { font-weight: bold; border-top: 1.5px solid #000; }
+    #printOverlay .pr-footer { font-size: 7.5pt; color: #666; margin-top: 3mm; text-align: right; }
+    #printOverlay .outer-border { border: 2px solid #000; padding: 4mm; }
+    #printOverlay .section-wrap { border: 1px solid #aaa; margin-bottom: 3mm; }
+    #printOverlay .section-wrap table th, #printOverlay .section-wrap table td { border-color: #aaa; }
+  }
   </style>
 </head>
 <body>
@@ -1030,6 +1070,7 @@ html, body {
       <div class="period-label" id="monthlyPeriodLabel">—</div>
       <button class="period-btn" onclick="changeMonthlyPeriod(1)">›</button>
       <button class="period-btn" onclick="renderMonthly(true)" title="GASから再取得">↻</button>
+      <button class="period-btn" onclick="openMonthlyPdfModal(currentDriverId)" title="PDF出力">📊</button>
     </div>
     <div id="monthlySummaryCard" style="margin-bottom:16px;"></div>
     <div id="monthlyDetail"></div>
@@ -1849,6 +1890,7 @@ async function renderRecords(forceReload = false) {
           <div class="record-tags">${tags.join('')}</div>
           <div class="rec-actions">
             <button class="rec-action-btn" onclick="showToast('編集はパート4で実装予定')">編集</button>
+            <button class="rec-action-btn print" onclick="printDailyReport('${date}')">📄 日報</button>
             ${deleteBtn}
           </div>
         </div>
@@ -3113,7 +3155,593 @@ function openAlcBForNewDay() {
   setTimeout(() => openAlcBStartModal(), 400);
 }
 
+// ============================================================
+// 日報PDF出力
+// ============================================================
+function printDailyReport(date) {
+  const rec = (appData[currentDriverId] || {})[date];
+  if (!rec) { showToast('記録が見つかりません', true); return; }
+
+  const driverName = getDriverName(currentDriverId);
+  const d = new Date(date + 'T00:00:00');
+  const dateStr = d.getFullYear() + '年' + (d.getMonth()+1) + '月' + d.getDate() + '日';
+  const breakMins = calcBreakMins(rec.breaks, rec.manualBreaks);
+  const bH = Math.floor(breakMins/60), bM = breakMins % 60;
+  const breakStr = bH + '時間' + String(bM).padStart(2,'0') + '分';
+
+  const fuels = (rec.fuelEntries||[]).filter(f=>f.shop||f.fuel||f.fuelRegular||f.adblue||f.odometer);
+  const allowances = (rec.allowances||[]).filter(a=>a.amount!==''&&a.amount!==undefined&&!isNaN(Number(a.amount)));
+  const lodgingAmt = rec.lodging ? 5000 : 0;
+  const allowTotal = lodgingAmt + allowances.reduce((s,a)=>s+Number(a.amount||0),0);
+
+  const eh = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const fuelRows = fuels.length ? fuels.map((f,i)=>`
+    <tr>
+      <td class="c">${i+1}</td>
+      <td>${eh(f.shop)}</td>
+      <td class="r">${eh(f.odometer)}</td>
+      <td class="r">${f.fuel||''}</td>
+      <td class="r">${f.fuelRegular||''}</td>
+      <td class="r">${f.adblue||''}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="6" class="empty">記録なし</td></tr>';
+
+  const shortfallAmt = Number(rec.allowanceShortfall || 0);
+  const excessAmt    = Number(rec.allowanceExcess    || 0);
+  const allowRows = [
+    `<tr><td>宿泊手当</td><td class="r">${lodgingAmt ? '¥5,000' : '—'}</td></tr>`,
+    ...allowances.map((a,idx)=>`<tr><td>${allowances.length>1?'受取手当 '+(idx+1):'受取手当'}</td><td class="r">¥${Number(a.amount||0).toLocaleString()}</td></tr>`)
+  ];
+  if (!allowRows.length) allowRows.push('<tr><td colspan="2" class="empty">手当なし</td></tr>');
+  else allowRows.push(`<tr class="total-row"><td>合 計</td><td class="r">¥${allowTotal.toLocaleString()}</td></tr>`);
+  allowRows.push(`<tr><td>手当(不足分)</td><td class="r">${shortfallAmt ? '¥'+shortfallAmt.toLocaleString() : '—'}</td></tr>`);
+  allowRows.push(`<tr><td>手当(受取超過分)</td><td class="r">${excessAmt ? '▲¥'+excessAmt.toLocaleString() : '—'}</td></tr>`);
+
+  const html = `<!DOCTYPE html><html lang="ja"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>運行日報 ${dateStr}</title>
+<style>
+@page { size: A4 portrait; margin: 12mm 14mm; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hiragino Sans','Meiryo',sans-serif; font-size: 9.5pt; color: #000; line-height: 1.4; background: #fff; padding: 6mm; }
+h1 { text-align: center; font-size: 17pt; letter-spacing: 6px; border-bottom: 2px solid #000; padding-bottom: 3mm; margin-bottom: 4mm; }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12mm; }
+.info-row { display: flex; gap: 6px; align-items: baseline; }
+.lbl { font-weight: bold; white-space: nowrap; min-width: 70px; font-size: 8.5pt; color: #444; }
+.val { font-size: 10pt; }
+h2 { font-size: 9.5pt; font-weight: bold; background: #222; color: #fff; padding: 2px 7px; letter-spacing: 1px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+th, td { border: 0.5px solid #888; padding: 2.5px 4px; vertical-align: top; }
+th { background: #e8e8e8; font-weight: bold; text-align: center; white-space: nowrap; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.c { text-align: center; width: 20px; }
+.r { text-align: right; }
+.place { width: 28%; }
+.empty { text-align: center; color: #999; font-style: italic; padding: 4px; }
+.total-row td { font-weight: bold; border-top: 1.5px solid #000; }
+.footer { font-size: 7.5pt; color: #666; margin-top: 3mm; text-align: right; }
+.outer-border { border: 2px solid #000; padding: 4mm; }
+.section-wrap { border: 1px solid #aaa; margin-bottom: 3mm; }
+.section-wrap table th, .section-wrap table td { border-color: #aaa; }
+.close-btn { display: block; width: 100%; padding: 14px; font-size: 16pt; font-weight: bold; background: #1a56db; color: #fff; border: none; border-radius: 8px; cursor: pointer; margin-bottom: 5mm; letter-spacing: 1px; }
+.close-btn:active { background: #1440a0; }
+@media print { .close-btn { display: none !important; } }
+</style>
+</head><body>
+<button class="close-btn" onclick="window.close()">← 閉じてアプリに戻る</button>
+<h1>運 行 日 報</h1>
+<div class="outer-border">
+  <div class="info-grid" style="border:1px solid #aaa;padding:3mm;margin-bottom:3mm;">
+    <div class="info-row"><span class="lbl">作成年月日:</span><span class="val">${dateStr}</span></div>
+    <div class="info-row"><span class="lbl">ドライバー:</span><span class="val">${eh(driverName)}</span></div>
+    <div class="info-row"><span class="lbl">配送地:</span><span class="val">${eh(rec.destination||'')}</span></div>
+  </div>
+  <div class="section-wrap">
+    <h2>運行記録</h2>
+    <table>
+      <tr><th>区分</th><th>地点名</th><th>年月日</th><th>時間</th><th>ODメーター(km)</th></tr>
+      <tr><td><b>乗務開始</b></td><td>${eh(rec.startPlace||rec.note||'')}</td><td>${eh(rec.startDate||date)}</td><td>${eh(rec.start||'')}</td><td class="r">${eh(rec.startMileage||'')}</td></tr>
+      ${(rec.visits||[]).map((v,i)=>`<tr><td>訪問先${i+1}</td><td colspan="4">${eh(v.place||'')}${v.report?`　${eh(v.report)}`:''}</td></tr>`).join('')}
+      <tr><td><b>乗務終了</b></td><td>${eh(rec.endPlace||'')}</td><td>${eh(date)}</td><td>${eh(rec.end||'')}</td><td class="r">${eh(rec.endMileage||'')}</td></tr>
+      <tr><td><b>総運行距離</b></td><td colspan="3"></td><td class="r">${(rec.startMileage && rec.endMileage) ? (Number(rec.endMileage)-Number(rec.startMileage))+' km' : '—'}</td></tr>
+      <tr><td><b>休憩合計</b></td><td colspan="3"></td><td class="r">${breakStr}</td></tr>
+    </table>
+  </div>
+  <div class="section-wrap">
+    <h2>給油情報</h2>
+    <table>
+      <tr><th>#</th><th>給油店名</th><th>ODメーター(km)</th><th>軽油(ℓ)</th><th>レギュラー(ℓ)</th><th>アドブルー(ℓ)</th></tr>
+      ${fuelRows}
+    </table>
+  </div>
+  <div class="section-wrap" style="margin-bottom:0;">
+    <h2>手当明細</h2>
+    <table>
+      <tr><th>内容</th><th style="width:90px">金額(¥)</th></tr>
+      ${allowRows.join('')}
+    </table>
+  </div>
+</div>
+<div class="footer">印刷日時: ${new Date().toLocaleString('ja-JP')}</div>
+<scr` + `ipt>
+setTimeout(function(){ window.print(); }, 600);
+</scr` + `ipt>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { showToast('ポップアップがブロックされています', true); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+// ============================================================
+// 月次集計PDF出力
+// ============================================================
+let _monthlyPdfDriverId = null;
+let _monthlyPdfOffset   = 0;
+
+function openMonthlyPdfModal(driverId) {
+  _monthlyPdfDriverId = driverId;
+  _monthlyPdfOffset   = _currentMonthlyOffset;
+  _updateMonthlyPdfModal();
+  const modal = document.getElementById('monthlyPdfModal');
+  modal.classList.add('open');
+  document.getElementById('monthlyPdfPrintBtn').onclick = function() {
+    modal.classList.remove('open');
+    printMonthlyReport(_monthlyPdfDriverId, _monthlyPdfOffset);
+  };
+  document.getElementById('monthlyPdfAllBtn').onclick = function() {
+    modal.classList.remove('open');
+    printMonthlyReportAll(_monthlyPdfOffset);
+  };
+}
+
+function _monthlyPdfChangeOffset(dir) {
+  _monthlyPdfOffset += dir;
+  _updateMonthlyPdfModal();
+}
+
+function _updateMonthlyPdfModal() {
+  const driverName = (drivers.find(d => d.id === _monthlyPdfDriverId) || {}).name || '—';
+  document.getElementById('monthlyPdfDriverLabel').textContent = driverName;
+  document.getElementById('monthlyPdfPeriodLabel').textContent = getPeriod(_monthlyPdfOffset).label;
+}
+
+async function printMonthlyReport(driverId, offset) {
+  // iOS Safari対策: window.openをユーザー操作直後(await前)に実行
+  const w = window.open('', '_blank');
+  if (!w) { showToast('ポップアップがブロックされています', true); return; }
+  w.document.write('<html><body style="font-family:sans-serif;padding:20px;color:#333"><p>読み込み中...</p></body></html>');
+
+  const driverObj = drivers.find(d => d.id === driverId);
+  const driverName = driverObj ? driverObj.name : '—';
+  const period = getPeriod(offset || 0);
+  const from = dateKey(period.start);
+  const to   = dateKey(period.end);
+  const eh = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  try {
+    const res = await gasPost({ action: 'getRecords', driverId, driverName, from, to });
+    if (!res || !res.success) { w.close(); showToast('データの取得に失敗しました', true); return; }
+
+    const byDate = {};
+    (res.records || []).forEach(r => { byDate[r.date] = r; });
+
+    const rows = [];
+    const tot = { dist:0, count:0, kumitate:0, bara:0, onetouch:0,
+                  lodging:0, allowTotal:0, shortfall:0, excess:0, subtotal:0, fuel:0,
+                  normalMins:0, nightMins:0, overtime:0, holidayMins:0 };
+
+    let hasAnyRecord = false;
+
+    getDatesInPeriod(period).forEach(date => {
+      const rec = byDate[date];
+      const [,mo,da] = date.split('-');
+      const isHol = isWeekend(date);
+      if (!rec || !rec.start) {
+        rows.push({ date, mo, da, isHol, rec: null, calc: null, dist: '', lodgingAmt: 0, allowDetail: '', allowSum: 0, shortfallAmt: 0, excessAmt: 0, subtotal: 0, fuelTotal: 0 });
+        return;
+      }
+      hasAnyRecord = true;
+      const calc = calcRecord(rec);
+      if (!calc) { rows.push({ date, mo, da, isHol, rec: null, calc: null, dist: '', lodgingAmt: 0, allowDetail: '', allowSum: 0, shortfallAmt: 0, excessAmt: 0, subtotal: 0, fuelTotal: 0 }); return; }
+
+      const dist = (rec.startMileage !== '' && rec.endMileage !== '')
+        ? Number(rec.endMileage) - Number(rec.startMileage) : '';
+      const lodgingAmt = rec.lodging ? 5000 : 0;
+      const allowances = (rec.allowances||[]).filter(a => a.amount !== '' && !isNaN(Number(a.amount)));
+      const shortfallAmt = Number(rec.allowanceShortfall || 0);
+      const excessAmt    = Number(rec.allowanceExcess    || 0);
+      const allowSum  = allowances.reduce((s,a) => s + Number(a.amount||0), 0);
+      const allowDetail = allowSum ? allowSum.toLocaleString() : '';
+      const subtotal  = lodgingAmt + allowSum;
+      const fuelTotal = (rec.fuelEntries||[]).reduce((s,f) =>
+        s + (parseFloat(f.fuel)||0) + (parseFloat(f.fuelRegular)||0), 0);
+      const isHolRec  = rec.type === 'holiday' || isHol;
+
+      if (dist !== '') tot.dist += dist;
+      tot.count     += Number(rec.count||0);
+      tot.kumitate  += Number(rec.kumitate||0);
+      tot.bara      += Number(rec.bara||0);
+      tot.onetouch  += Number(rec.onetouch||0);
+      tot.lodging   += lodgingAmt;
+      tot.allowTotal+= allowSum;
+      tot.shortfall += shortfallAmt;
+      tot.excess    += excessAmt;
+      tot.subtotal  += subtotal;
+      tot.fuel      += fuelTotal;
+      tot.normalMins+= calc.normalMins;
+      tot.nightMins += calc.nightMins;
+      tot.overtime  += calc.overtime;
+      tot.holidayMins+=calc.holidayMins;
+
+      rows.push({ date, mo, da, isHol: isHolRec, rec, calc, dist, lodgingAmt, allowDetail, allowSum, shortfallAmt, excessAmt, subtotal, fuelTotal });
+    });
+
+    if (!hasAnyRecord) { w.close(); showToast('この期間に記録がありません', true); return; }
+
+    const tableRows = rows.map(r => {
+      const dow = DAY_NAMES[new Date(r.date + 'T00:00:00').getDay()];
+      if (!r.rec) return `<tr${r.isHol ? ' class="hol"' : ''}><td class="c date-cell">${r.mo}/${r.da}(${dow})</td>${'<td></td>'.repeat(16)}</tr>`;
+      return `<tr${r.isHol ? ' class="hol"' : ''}>
+        <td class="c date-cell">${r.mo}/${r.da}(${dow})</td>
+        <td>${eh(r.rec.destination||'')}</td>
+        <td class="r">${r.dist !== '' ? r.dist : ''}</td>
+        <td class="r">${r.rec.count||''}</td>
+        <td class="r">${r.rec.kumitate||''}</td>
+        <td class="r">${r.rec.bara||''}</td>
+        <td class="r">${r.rec.onetouch||''}</td>
+        <td class="r">${r.lodgingAmt||''}</td>
+        <td class="r">${r.allowSum||''}</td>
+        <td class="r">${r.subtotal||''}</td>
+        <td class="r">${r.shortfallAmt||''}</td>
+        <td class="r">${r.excessAmt ? '▲'+r.excessAmt : ''}</td>
+        <td class="r">${r.fuelTotal||''}</td>
+        <td class="r">${minutesToH(r.calc.normalMins)}</td>
+        <td class="r">${minutesToH(r.calc.nightMins)}</td>
+        <td class="r">${minutesToH(r.calc.overtime)}</td>
+        <td class="r">${minutesToH(r.calc.holidayMins)}</td>
+      </tr>`;
+    }).join('');
+
+    const totRow = `<tr class="total-row">
+      <td colspan="2" class="c">合 計 (${rows.filter(r=>r.rec).length}日)</td>
+      <td class="r">${tot.dist}</td>
+      <td class="r">${tot.count||''}</td>
+      <td class="r">${tot.kumitate||''}</td>
+      <td class="r">${tot.bara||''}</td>
+      <td class="r">${tot.onetouch||''}</td>
+      <td class="r">${tot.lodging||''}</td>
+      <td class="r">${tot.allowTotal||''}</td>
+      <td class="r">${tot.subtotal||''}</td>
+      <td class="r">${tot.shortfall||''}</td>
+      <td class="r">${tot.excess ? '▲'+tot.excess : ''}</td>
+      <td class="r">${tot.fuel||''}</td>
+      <td class="r">${minutesToH(tot.normalMins)}</td>
+      <td class="r">${minutesToH(tot.nightMins)}</td>
+      <td class="r">${minutesToH(tot.overtime)}</td>
+      <td class="r">${minutesToH(tot.holidayMins)}</td>
+    </tr>`;
+
+    const html = `<!DOCTYPE html><html lang="ja"><head>
+<meta charset="UTF-8">
+<title>月次集計 ${eh(driverName)} ${period.label}</title>
+<style>
+@page { size: A4 landscape; margin: 8mm; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hiragino Sans','Meiryo',sans-serif; font-size: 7.5pt; color: #000; background: #fff; }
+h1 { font-size: 13pt; font-weight: bold; text-align: center; margin-bottom: 3mm; letter-spacing: 4px; border-bottom: 2px solid #000; padding-bottom: 2mm; }
+.info { display: flex; gap: 16mm; margin-bottom: 3mm; font-size: 8pt; }
+table { width: 100%; border-collapse: collapse; }
+th { background: #333 !important; color: #fff !important; font-weight: bold; text-align: center;
+     padding: 2px 2px; white-space: nowrap; font-size: 6.5pt;
+     border: 1px solid #333; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+td { border: 1px solid #888; padding: 2px 2px; vertical-align: middle; font-size: 7pt; }
+.c { text-align: center; }
+.r { text-align: right; white-space: nowrap; }
+.allow { font-size: 6.5pt; }
+.hol td { background: #e0e0e0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.hol .date-cell { font-weight: bold; }
+.total-row td { font-weight: bold; background: #eeeeee !important; border-top: 2px solid #000;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.footer { margin-top: 2mm; font-size: 6.5pt; color: #666; text-align: right; }
+.close-btn { display: block; margin: 6mm auto 0; padding: 8px 24px; font-size: 14pt;
+             background: #333; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+@media print { .close-btn { display: none !important; } }
+</style>
+</head><body>
+<h1>月 次 集 計 表</h1>
+<div class="info">
+  <span><b>ドライバー:</b> ${eh(driverName)}</span>
+  <span><b>集計期間:</b> ${period.label}</span>
+</div>
+<table>
+  <thead><tr>
+    <th style="width:26mm">日付</th>
+    <th style="width:28mm">配送地</th>
+    <th style="width:16mm">走行距離<br>(km)</th>
+    <th style="width:12mm">件数</th>
+    <th style="width:11mm">完成</th>
+    <th style="width:11mm">バラ</th>
+    <th style="width:15mm">ワンタッチ</th>
+    <th style="width:14mm">宿泊費</th>
+    <th style="width:13mm">手当合計</th>
+    <th style="width:13mm">小計</th>
+    <th style="width:13mm">手当<br>(不足分)</th>
+    <th style="width:13mm">手当<br>(超過分)</th>
+    <th style="width:14mm">給油ℓ合計</th>
+    <th style="width:16mm">通常時間</th>
+    <th style="width:14mm">深夜時間</th>
+    <th style="width:14mm">時間外</th>
+    <th style="width:16mm">休日出勤</th>
+  </tr></thead>
+  <tbody>${tableRows}${totRow}</tbody>
+  <tfoot><tr>
+    <th style="width:26mm">日付</th>
+    <th style="width:28mm">配送地</th>
+    <th style="width:16mm">走行距離<br>(km)</th>
+    <th style="width:12mm">件数</th>
+    <th style="width:11mm">完成</th>
+    <th style="width:11mm">バラ</th>
+    <th style="width:15mm">ワンタッチ</th>
+    <th style="width:14mm">宿泊費</th>
+    <th style="width:13mm">手当合計</th>
+    <th style="width:13mm">小計</th>
+    <th style="width:13mm">手当<br>(不足分)</th>
+    <th style="width:13mm">手当<br>(超過分)</th>
+    <th style="width:14mm">給油ℓ合計</th>
+    <th style="width:16mm">通常時間</th>
+    <th style="width:14mm">深夜時間</th>
+    <th style="width:14mm">時間外</th>
+    <th style="width:16mm">休日出勤</th>
+  </tr></tfoot>
+</table>
+<div class="footer">印刷日時: ${new Date().toLocaleString('ja-JP')}</div>
+<button class="close-btn" onclick="window.close()">✕ 閉じてアプリに戻る</button>
+<scr` + `ipt>
+setTimeout(function(){ window.print(); }, 600);
+</scr` + `ipt>
+</body></html>`;
+
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  } catch(e) {
+    w.close();
+    showToast('エラーが発生しました', true);
+  }
+}
+
+// ============================================================
+// 月次集計PDF 全員一括出力
+// ============================================================
+async function printMonthlyReportAll(offset) {
+  // iOS Safari対策: window.openをawait前に実行
+  const w = window.open('', '_blank');
+  if (!w) { showToast('ポップアップがブロックされています', true); return; }
+  w.document.write('<html><body style="font-family:sans-serif;padding:20px;color:#333"><p>全員分のデータを読み込み中...</p></body></html>');
+
+  const period = getPeriod(offset || 0);
+  const from   = dateKey(period.start);
+  const to     = dateKey(period.end);
+  const eh = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  try {
+    // 全ドライバーのデータを順次取得(並列はメモリ圧迫でSafariがクラッシュするため)
+    const results = [];
+    for (const d of drivers) {
+      try {
+        const res = await gasPost({ action: 'getRecords', driverId: d.id, driverName: d.name, from, to });
+        results.push({ driver: d, records: (res && res.success) ? res.records : [] });
+      } catch(e) {
+        results.push({ driver: d, records: [] });
+      }
+    }
+
+    // 共通スタイル(1ドライバー=1ページ)
+    const style = `
+@page { size: A4 landscape; margin: 8mm; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hiragino Sans','Meiryo',sans-serif; font-size: 7.5pt; color: #000; background: #fff; }
+.page { page-break-after: always; padding-bottom: 4mm; }
+.page:last-child { page-break-after: avoid; }
+h1 { font-size: 13pt; font-weight: bold; text-align: center; margin-bottom: 3mm; letter-spacing: 4px; border-bottom: 2px solid #000; padding-bottom: 2mm; }
+.info { display: flex; gap: 16mm; margin-bottom: 3mm; font-size: 8pt; }
+table { width: 100%; border-collapse: collapse; }
+th { background: #333 !important; color: #fff !important; font-weight: bold; text-align: center;
+     padding: 2px 2px; white-space: nowrap; font-size: 6.5pt;
+     border: 1px solid #333; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+td { border: 1px solid #888; padding: 2px 2px; vertical-align: middle; font-size: 7pt; }
+.c { text-align: center; }
+.r { text-align: right; white-space: nowrap; }
+.allow { font-size: 6.5pt; }
+.hol td { background: #e0e0e0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.hol .date-cell { font-weight: bold; }
+.total-row td { font-weight: bold; background: #eeeeee !important; border-top: 2px solid #000;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.footer { margin-top: 2mm; font-size: 6.5pt; color: #666; text-align: right; }`;
+
+    const headerCells = `
+      <th style="width:26mm">日付</th>
+      <th style="width:28mm">配送地</th>
+      <th style="width:16mm">走行距離(km)</th>
+      <th style="width:12mm">件数</th>
+      <th style="width:11mm">完成</th>
+      <th style="width:11mm">バラ</th>
+      <th style="width:15mm">ワンタッチ</th>
+      <th style="width:14mm">宿泊費</th>
+      <th style="width:13mm">手当合計</th>
+      <th style="width:13mm">小計</th>
+      <th style="width:13mm">手当<br>(不足分)</th>
+      <th style="width:13mm">手当<br>(超過分)</th>
+      <th style="width:14mm">給油ℓ合計</th>
+      <th style="width:16mm">通常時間</th>
+      <th style="width:14mm">深夜時間</th>
+      <th style="width:14mm">時間外</th>
+      <th style="width:16mm">休日出勤</th>`;
+    const thead = `<thead><tr>${headerCells}</tr></thead>`;
+    const tfoot = `<tfoot><tr>${headerCells}</tr></tfoot>`;
+
+    const buildPage = ({ driver, records }) => {
+      const byDate = {};
+      records.forEach(r => { byDate[r.date] = r; });
+
+      const rows = [];
+      const tot = { dist:0, count:0, kumitate:0, bara:0, onetouch:0,
+                    lodging:0, allowTotal:0, shortfall:0, excess:0, subtotal:0, fuel:0,
+                    normalMins:0, nightMins:0, overtime:0, holidayMins:0 };
+
+      let hasAnyRecord = false;
+      getDatesInPeriod(period).forEach(date => {
+        const rec = byDate[date];
+        const [,mo,da] = date.split('-');
+        const isHol = isWeekend(date);
+        if (!rec || !rec.start) {
+          rows.push({ date, mo, da, isHol, rec: null, calc: null, dist: '', lodgingAmt: 0, allowDetail: '', allowSum: 0, shortfallAmt: 0, excessAmt: 0, subtotal: 0, fuelTotal: 0 });
+          return;
+        }
+        hasAnyRecord = true;
+        const calc = calcRecord(rec);
+        if (!calc) { rows.push({ date, mo, da, isHol, rec: null, calc: null, dist: '', lodgingAmt: 0, allowDetail: '', allowSum: 0, shortfallAmt: 0, excessAmt: 0, subtotal: 0, fuelTotal: 0 }); return; }
+        const dist = (rec.startMileage !== '' && rec.endMileage !== '')
+          ? Number(rec.endMileage) - Number(rec.startMileage) : '';
+        const lodgingAmt = rec.lodging ? 5000 : 0;
+        const allowances = (rec.allowances||[]).filter(a => a.amount !== '' && !isNaN(Number(a.amount)));
+        const shortfallAmt = Number(rec.allowanceShortfall || 0);
+        const excessAmt    = Number(rec.allowanceExcess    || 0);
+        const allowSum  = allowances.reduce((s,a) => s + Number(a.amount||0), 0);
+        const allowDetail = allowSum ? allowSum.toLocaleString() : '';
+        const subtotal  = lodgingAmt + allowSum;
+        const fuelTotal = (rec.fuelEntries||[]).reduce((s,f) =>
+          s + (parseFloat(f.fuel)||0) + (parseFloat(f.fuelRegular)||0), 0);
+        const isHolRec  = rec.type === 'holiday' || isHol;
+        if (dist !== '') tot.dist += dist;
+        tot.count     += Number(rec.count||0);
+        tot.kumitate  += Number(rec.kumitate||0);
+        tot.bara      += Number(rec.bara||0);
+        tot.onetouch  += Number(rec.onetouch||0);
+        tot.lodging   += lodgingAmt;
+        tot.allowTotal+= allowSum;
+        tot.shortfall += shortfallAmt;
+        tot.excess    += excessAmt;
+        tot.subtotal  += subtotal;
+        tot.fuel      += fuelTotal;
+        tot.normalMins+= calc.normalMins;
+        tot.nightMins += calc.nightMins;
+        tot.overtime  += calc.overtime;
+        tot.holidayMins+=calc.holidayMins;
+        rows.push({ date, mo, da, isHol: isHolRec, rec, calc, dist, lodgingAmt, allowDetail, allowSum, shortfallAmt, excessAmt, subtotal, fuelTotal });
+      });
+
+      if (!hasAnyRecord) return ''; // 記録なしはスキップ
+
+      const tableRows = rows.map(r => {
+        const dow = DAY_NAMES[new Date(r.date + 'T00:00:00').getDay()];
+        if (!r.rec) return `<tr${r.isHol ? ' class="hol"' : ''}><td class="c date-cell">${r.mo}/${r.da}(${dow})</td>${'<td></td>'.repeat(16)}</tr>`;
+        return `<tr${r.isHol ? ' class="hol"' : ''}>
+          <td class="c date-cell">${r.mo}/${r.da}(${dow})</td>
+          <td>${eh(r.rec.destination||'')}</td>
+          <td class="r">${r.dist !== '' ? r.dist : ''}</td>
+          <td class="r">${r.rec.count||''}</td>
+          <td class="r">${r.rec.kumitate||''}</td>
+          <td class="r">${r.rec.bara||''}</td>
+          <td class="r">${r.rec.onetouch||''}</td>
+          <td class="r">${r.lodgingAmt||''}</td>
+          <td class="r">${r.allowSum||''}</td>
+          <td class="r">${r.shortfallAmt||''}</td>
+          <td class="r">${r.excessAmt ? '▲'+r.excessAmt : ''}</td>
+          <td class="r">${r.subtotal||''}</td>
+          <td class="r">${r.fuelTotal||''}</td>
+          <td class="r">${minutesToH(r.calc.normalMins)}</td>
+          <td class="r">${minutesToH(r.calc.nightMins)}</td>
+          <td class="r">${minutesToH(r.calc.overtime)}</td>
+          <td class="r">${minutesToH(r.calc.holidayMins)}</td>
+        </tr>`;
+      }).join('');
+
+      const totRow = `<tr class="total-row">
+        <td colspan="2" class="c">合 計 (${rows.filter(r=>r.rec).length}日)</td>
+        <td class="r">${tot.dist}</td>
+        <td class="r">${tot.count||''}</td>
+        <td class="r">${tot.kumitate||''}</td>
+        <td class="r">${tot.bara||''}</td>
+        <td class="r">${tot.onetouch||''}</td>
+        <td class="r">${tot.lodging||''}</td>
+        <td class="r">${tot.allowTotal||''}</td>
+        <td class="r">${tot.shortfall||''}</td>
+        <td class="r">${tot.excess ? '▲'+tot.excess : ''}</td>
+        <td class="r">${tot.subtotal||''}</td>
+        <td class="r">${tot.fuel||''}</td>
+        <td class="r">${minutesToH(tot.normalMins)}</td>
+        <td class="r">${minutesToH(tot.nightMins)}</td>
+        <td class="r">${minutesToH(tot.overtime)}</td>
+        <td class="r">${minutesToH(tot.holidayMins)}</td>
+      </tr>`;
+
+      return `<div class="page">
+        <h1>月 次 集 計 表</h1>
+        <div class="info">
+          <span><b>ドライバー:</b> ${eh(driver.name)}</span>
+          <span><b>集計期間:</b> ${period.label}</span>
+        </div>
+        <table>${thead}<tbody>${tableRows}${totRow}</tbody>${tfoot}</table>
+        <div class="footer">印刷日時: ${new Date().toLocaleString('ja-JP')}</div>
+      </div>`;
+    };
+
+    const pages = results.map(buildPage).filter(Boolean);
+    if (!pages.length) { w.close(); showToast('この期間に記録がありません', true); return; }
+
+    const html = `<!DOCTYPE html><html lang="ja"><head>
+<meta charset="UTF-8">
+<title>月次集計(全員) ${period.label}</title>
+<style>${style}
+.close-btn { display: block; margin: 6mm auto 0; padding: 8px 24px; font-size: 14pt;
+             background: #333; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+@media print { .close-btn { display: none !important; } }
+</style>
+</head><body>
+${pages.join('\n')}
+<button class="close-btn" onclick="window.close()">✕ 閉じてアプリに戻る</button>
+<scr` + `ipt>
+setTimeout(function(){ window.print(); }, 600);
+</scr` + `ipt>
+</body></html>`;
+
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  } catch(e) {
+    w.close();
+    showToast('エラーが発生しました', true);
+  }
+}
+
 init();
 </script>
+
+<!-- MONTHLY PDF PERIOD SELECT MODAL -->
+<div class="confirm-overlay" id="monthlyPdfModal">
+  <div class="confirm-box" style="min-width:300px;">
+    <div class="confirm-msg">月次集計PDF</div>
+    <div class="confirm-sub" id="monthlyPdfDriverLabel" style="margin-bottom:12px;"></div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:16px;">
+      <button onclick="_monthlyPdfChangeOffset(-1)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 14px;font-size:20px;cursor:pointer;">◀</button>
+      <span id="monthlyPdfPeriodLabel" style="font-size:18px;color:var(--text);min-width:180px;text-align:center;"></span>
+      <button onclick="_monthlyPdfChangeOffset(1)"  style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 14px;font-size:20px;cursor:pointer;">▶</button>
+    </div>
+    <div class="confirm-btns" style="flex-direction:column;gap:8px;">
+      <div style="display:flex;gap:8px;width:100%;">
+        <button class="confirm-btn-cancel" onclick="document.getElementById('monthlyPdfModal').classList.remove('open')" style="flex:1;">キャンセル</button>
+        <button class="confirm-btn-ok" id="monthlyPdfPrintBtn" style="flex:1;">📊 個別出力</button>
+      </div>
+      <button id="monthlyPdfAllBtn" style="width:100%;padding:10px;background:var(--info);color:#fff;border:none;border-radius:8px;font-size:22px;cursor:pointer;font-family:'Noto Sans JP',sans-serif;">👥 全員一括印刷</button>
+    </div>
+  </div>
+</div>
+
+<div id="printOverlay"></div>
 </body>
 </html>
