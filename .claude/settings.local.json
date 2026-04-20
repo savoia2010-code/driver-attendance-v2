@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(pkill -f \"node mock-server/server.js\")"
+    ]
+  }
+}
