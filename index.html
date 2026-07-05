@@ -1607,6 +1607,22 @@ function hideLoading() {
   document.getElementById('loading-overlay').classList.remove('show');
 }
 
+// 遅延ローディング表示：指定時間以内に終わる通信ではオーバーレイを出さない
+// （キャッシュヒット時などの画面チラつきを防ぐ）。
+// オーバーレイが出るまでの間も lockUI で入力をブロックするため防御は落ちない。
+let _delayedLoadingTimer = null;
+function showLoadingDelayed(msg, delayMs = 300) {
+  lockUI();
+  clearTimeout(_delayedLoadingTimer);
+  _delayedLoadingTimer = setTimeout(() => showLoading(msg), delayMs);
+}
+function hideLoadingDelayed() {
+  clearTimeout(_delayedLoadingTimer);
+  _delayedLoadingTimer = null;
+  hideLoading();
+  unlockUI();
+}
+
 // ============================================================
 // ナビゲーション表示制御
 // ============================================================
@@ -1680,12 +1696,14 @@ function selectDriver(id) {
 function _saveDriversCache(list) {
   try { _store.setItem(DRIVERS_KEY, JSON.stringify({ data: list, ts: Date.now() })); } catch(e) {}
 }
-function _loadDriversCache() {
+// allowStale=true でTTL切れのキャッシュも返す
+// （キャッシュ優先起動用：直後にバックグラウンドで最新を取得する前提）
+function _loadDriversCache(allowStale = false) {
   try {
     const raw = _store.getItem(DRIVERS_KEY);
     if (!raw) return null;
     const { data, ts } = JSON.parse(raw);
-    return (Date.now() - ts < CACHE_TTL_MS) ? data : null;
+    return (allowStale || Date.now() - ts < CACHE_TTL_MS) ? data : null;
   } catch(e) { return null; }
 }
 function _saveCheckerCache(list) {
@@ -1911,15 +1929,15 @@ async function renderRecords(forceReload = false) {
   const list = document.getElementById('recordsList');
   if (!list) return;
 
-  showLoading('記録を読み込み中');
+  showLoadingDelayed('記録を読み込み中');
   try {
     await loadRecordsFromGAS(from, to, forceReload);
   } catch (e) {
-    hideLoading();
+    hideLoadingDelayed();
     showToast('記録の読み込みに失敗しました', true);
     return;
   }
-  hideLoading();
+  hideLoadingDelayed();
 
   const driverData = appData[currentDriverId] || {};
   const records    = getDatesInPeriod(period)
@@ -2270,15 +2288,15 @@ async function renderMonthly(forceReload = false) {
   const labelEl = document.getElementById('monthlyPeriodLabel');
   if (labelEl) labelEl.textContent = period.label;
 
-  showLoading('月次集計を読み込み中');
+  showLoadingDelayed('月次集計を読み込み中');
   try {
     await loadRecordsFromGAS(from, to, forceReload);
   } catch(e) {
-    hideLoading();
+    hideLoadingDelayed();
     showToast('記録の読み込みに失敗しました', true);
     return;
   }
-  hideLoading();
+  hideLoadingDelayed();
 
   const driverData = appData[currentDriverId] || {};
   let totalMins = 0, overtimeMins = 0, nightMins = 0, breakMins = 0, holidayMins = 0, workDays = 0;
@@ -2437,18 +2455,24 @@ async function submitAdminKey() {
 // アプリ起動
 // ============================================================
 async function startApp() {
-  showLoading('読み込み中...');
-
-  // キャッシュ読み込み
-  const cachedDrivers  = _loadDriversCache();
+  // キャッシュ読み込み（起動時はTTL切れでも使う：直後にバックグラウンドで更新）
+  const cachedDrivers  = _loadDriversCache(true);
   const cachedCheckers = _loadCheckerCache();
   if (cachedDrivers)  drivers       = cachedDrivers;
   if (cachedCheckers) _checkerCache = cachedCheckers;
 
-  // GASから最新データを取得
-  await loadInitFromGAS();
-
-  hideLoading();
+  if (cachedDrivers && cachedDrivers.length > 0) {
+    // キャッシュ優先起動：画面を即表示し、マスタはバックグラウンドで最新化
+    loadInitFromGAS().then(() => {
+      updateDriverBadges();
+      if (_currentScreen === 'screen-drivers' && typeof renderDrivers === 'function') renderDrivers();
+    });
+  } else {
+    // 初回（キャッシュ無し）は従来どおり取得完了を待つ
+    showLoading('読み込み中...');
+    await loadInitFromGAS();
+    hideLoading();
+  }
 
   // ドライバー設定
   if (_urlDriverId) {
