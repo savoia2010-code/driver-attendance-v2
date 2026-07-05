@@ -156,6 +156,15 @@ html, body {
 .nav-icon { font-size: 20px; line-height: 1; }
 .nav-label { font-size: 11px; font-family: 'Noto Sans JP', sans-serif; }
 
+/* UIロック中はナビを無効化（機構的な防御は navTo 側の isUIBlocked ガード） */
+body.ui-locked .bottom-nav,
+body:has(.modal-overlay.open) .bottom-nav,
+body:has(#confirm-overlay.open) .bottom-nav,
+body:has(#loading-overlay.show) .bottom-nav {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
 /* ============================================================
    共通ボタン
    ============================================================ */
@@ -1465,6 +1474,36 @@ async function gasPost(data) {
 }
 
 // ============================================================
+// UIロック（通信中・モーダル連鎖の遅延中の操作を防ぐ）
+// ============================================================
+let _busyCount = 0;
+
+function lockUI() {
+  _busyCount++;
+  document.body.classList.add('ui-locked');
+}
+
+function unlockUI() {
+  _busyCount = Math.max(0, _busyCount - 1);
+  if (_busyCount === 0) document.body.classList.remove('ui-locked');
+}
+
+// モーダル類の開閉状態はカウンタに混ぜず DOM から導出する
+// （閉じ忘れによる永久ロックを構造的に防ぐ）
+function isUIBlocked() {
+  return _busyCount > 0 ||
+    !!document.querySelector('.modal-overlay.open') ||
+    document.getElementById('confirm-overlay').classList.contains('open') ||
+    document.getElementById('loading-overlay').classList.contains('show');
+}
+
+// 遅延遷移の共通ラッパ：モーダルが開くまでの隙間をロックで塞ぐ
+function lockedDelay(fn, ms) {
+  lockUI();
+  setTimeout(() => { unlockUI(); fn(); }, ms);
+}
+
+// ============================================================
 // 画面遷移
 // ============================================================
 let _currentScreen = 'screen-punch';
@@ -1480,7 +1519,14 @@ function showScreen(id) {
   window.scrollTo(0, 0);
 }
 
+// ユーザー操作（ナビボタン）用：ロック中は遷移を拒否
 function navTo(id) {
+  if (isUIBlocked()) return;
+  forceNavTo(id);
+}
+
+// アプリ内部の遷移用（打刻フロー・起動処理などロック中でも動く必要がある経路）
+function forceNavTo(id) {
   showScreen(id);
   // 画面ごとの更新処理（Part 2〜4 で実装）
   if (id === 'screen-punch')    renderPunchScreen && renderPunchScreen();
@@ -2699,7 +2745,7 @@ function confirmPunch() {
     saveTodayState(); updatePunchUI(); closeModal();
     showToast('✓ 始業 ' + time + ' を記録しました');
     syncToGAS(todayState);
-    setTimeout(() => openAlcBStartModal(), 300);
+    lockedDelay(() => openAlcBStartModal(), 300);
     return;
 
   } else if (pendingPunchType === 'breakStart') {
@@ -2709,7 +2755,7 @@ function confirmPunch() {
       saveTodayState(); updatePunchUI(); closeModal();
       showToast('✓ 休憩開始 ' + time + ' を記録しました');
       syncToGAS(todayState);
-      setTimeout(() => openConfirm('🌙 日付をまたいでいます', '酒気帯び確認をしますか？', () => startLodgingTransition(), 'はい', false), 400);
+      lockedDelay(() => openConfirm('🌙 日付をまたいでいます', '酒気帯び確認をしますか？', () => startLodgingTransition(), 'はい', false), 400);
       return;
     }
 
@@ -2720,7 +2766,7 @@ function confirmPunch() {
       _waitingLodgingDay2 = false; _lodgingBreakEndTime = time;
       saveTodayState(); updatePunchUI(); closeModal();
       showToast('✓ 休憩終了 ' + time + ' を記録しました');
-      setTimeout(() => openAlcBForNewDay(), 400);
+      lockedDelay(() => openAlcBForNewDay(), 400);
       return;
     }
 
@@ -2739,7 +2785,7 @@ function confirmPunch() {
     updatePunchUI(); closeModal();
     showToast('✓ 到着を記録しました。酒気確認をしてください');
     syncToGAS(savedRecord);
-    setTimeout(() => openAlcAModal(savedRecord, false), 300);
+    lockedDelay(() => openAlcAModal(savedRecord, false), 300);
     return;
   }
 
@@ -2991,7 +3037,7 @@ function confirmAlcBStartModal() {
   showToast('✓ 運転前酒気確認を記録しました');
   if (_isLodgingDay2AlcB) {
     _isLodgingDay2AlcB = false;
-    setTimeout(() => { navTo('screen-report'); showToast('📋 2日目の日報を確認してください'); }, 300);
+    lockedDelay(() => { forceNavTo('screen-report'); showToast('📋 2日目の日報を確認してください'); }, 300);
   }
 }
 
@@ -3012,7 +3058,7 @@ function startLodgingTransition() {
   _lodgingBreakStartTime = lastBreak ? (lastBreak.start || '00:00') : '00:00';
 
   showToast('1日目の運転後酒気確認をしてください');
-  setTimeout(() => openAlcAModal(day1Record, true), 400);
+  lockedDelay(() => openAlcAModal(day1Record, true), 400);
 }
 
 // ============================================================
@@ -3126,7 +3172,7 @@ function confirmAlcAModal() {
     _alcASavedRecord = null; _isLodgingDay1 = false;
     _lodgingDay1Date = day1SaveRecord ? (day1SaveRecord.startDate || day1SaveRecord.date) : _realTodayKey();
     autoSaveRecord(day1SaveRecord);
-    setTimeout(() => {
+    lockedDelay(() => {
       const d = new Date(_lodgingDay1Date + 'T00:00:00');
       d.setDate(d.getDate() + 1);
       const day2Date = dateKey(d);
@@ -3143,7 +3189,7 @@ function confirmAlcAModal() {
     showToast('✓ お疲れ様でした！記録を保存しました');
     autoSaveRecord(_alcASavedRecord);
     _alcASavedRecord = null;
-    setTimeout(() => openConfirm('日報を確認しますか？', printDate + ' の日報を開きます', () => navTo('screen-report'), '日報を見る', false), 400);
+    lockedDelay(() => openConfirm('日報を確認しますか？', printDate + ' の日報を開きます', () => forceNavTo('screen-report'), '日報を見る', false), 400);
   }
 }
 
@@ -3152,7 +3198,7 @@ function openAlcBForNewDay() {
   if (last && !last.end) last.end = _lodgingBreakEndTime;
   saveTodayState(); syncToGAS(todayState); updatePunchUI();
   _isLodgingDay2AlcB = true;
-  setTimeout(() => openAlcBStartModal(), 400);
+  lockedDelay(() => openAlcBStartModal(), 400);
 }
 
 // ============================================================
