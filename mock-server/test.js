@@ -297,6 +297,41 @@ async function run() {
   const unknown = await post('unknownAction');
   assert('エラーになる', unknown.success === false);
 
+  // ──────────────────────────────────────────
+  // [28] saveRecord の savedAt 付与
+  // ──────────────────────────────────────────
+  console.log('\n[28] saveRecord の savedAt 付与');
+  const cRecA = await post('saveRecord', { driverId, date: today, destination: '競合テストA' });
+  assert('成功する', cRecA.success === true);
+  assert('レスポンスに record.savedAt が含まれる', cRecA.record && !!cRecA.record.savedAt);
+  assert('baseSavedAt は保存されない', cRecA.record && !('baseSavedAt' in cRecA.record));
+
+  // ──────────────────────────────────────────
+  // [29] savedAt による競合検知
+  // ──────────────────────────────────────────
+  console.log('\n[29] savedAt による競合検知');
+  const stale = await post('saveRecord', { driverId, date: today, destination: '競合テストB', baseSavedAt: '2000-01-01T00:00:00.000Z' });
+  assert('古い baseSavedAt は conflict エラーになる', stale.success === false && stale.error === 'conflict');
+  assert('latest に最新レコードが返る', stale.latest && stale.latest.destination === '競合テストA');
+  const match = await post('saveRecord', { driverId, date: today, destination: '競合テストC', baseSavedAt: cRecA.record.savedAt });
+  assert('一致する baseSavedAt は保存できる', match.success === true);
+  const force = await post('saveRecord', { driverId, date: today, destination: '競合テストD' });
+  assert('baseSavedAt 無しは従来どおり上書きできる', force.success === true);
+  const forceEmpty = await post('saveRecord', { driverId, date: today, destination: '競合テストE', baseSavedAt: '' });
+  assert('baseSavedAt 空文字も上書きできる', forceEmpty.success === true);
+
+  // ──────────────────────────────────────────
+  // [30] 連続保存でもレコードは1件のまま
+  // ──────────────────────────────────────────
+  console.log('\n[30] 連続保存でもレコードは1件のまま');
+  const afterConflict = await post('getRecords', { driverId, from: today, to: today });
+  assert('同一 driverId+date のレコードは1件', afterConflict.records.length === 1);
+  assert('最後の保存内容が反映されている', afterConflict.records[0].destination === '競合テストE');
+  const delDouble = await post('deleteRecord', { driverId, date: today });
+  assert('削除が成功する', delDouble.success === true);
+  const delAgain = await post('deleteRecord', { driverId, date: today });
+  assert('二重削除は2回目がエラーになる（データ不整合なし）', delAgain.success === false);
+
   // ── 結果サマリー ──
   console.log(`\n${'='.repeat(40)}`);
   console.log(`結果: ${passed} 件成功 / ${failed} 件失敗`);

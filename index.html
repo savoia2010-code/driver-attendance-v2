@@ -1469,7 +1469,11 @@ async function gasPost(data) {
     body:    JSON.stringify(data)
   }, 15000);
   const json = await res.json();
-  if (json && json.error) throw new Error(json.error);
+  if (json && json.error) {
+    const err = new Error(json.error);
+    err.response = json;  // 競合時の latest など詳細を呼び出し側で参照できるように
+    throw err;
+  }
   return json;
 }
 
@@ -1702,6 +1706,13 @@ async function loadInitFromGAS() {
   } catch(e) {
     console.error('Init error:', e);
   }
+}
+
+// 指定ドライバーの期間キャッシュを破棄（削除・競合上書き後にサーバーと再同期させる）
+function invalidateRecordsCache(driverId) {
+  Object.keys(_loadedPeriods).forEach(k => {
+    if (k.startsWith(driverId + '_')) delete _loadedPeriods[k];
+  });
 }
 
 async function loadRecordsFromGAS(from, to, forceReload = false) {
@@ -1982,6 +1993,7 @@ async function deleteRecordCard(date) {
         const res = await gasPost({ action: 'deleteRecord', driverId: currentDriverId, date });
         if (!res.success) throw new Error(res.error || '削除失敗');
         if (appData[currentDriverId]) delete appData[currentDriverId][date];
+        invalidateRecordsCache(currentDriverId);
         showToast('✓ 記録を削除しました');
         renderRecords(false);
       } catch (e) {
@@ -2588,6 +2600,8 @@ function buildRecord(state) {
     alcAResult:          state.alcAResult  || '',
     alcAChecker:         state.alcAChecker || '',
     alcADate:            state.alcADate    || '',
+    // 楽観的競合検知の基準（前回保存時にサーバーが付与した savedAt）
+    baseSavedAt:         state.savedAt     || '',
   };
 }
 
@@ -2598,10 +2612,26 @@ let _syncDirty = false;
 let _syncErrorToastAt = 0;
 
 function enqueueSync(state) {
-  const payload = buildRecord(state);  // 呼び出し時点のスナップショット
   _syncChain = _syncChain
-    .then(() => gasPost(payload))
-    .then(() => { _syncDirty = false; })
+    // ペイロードは直前の保存完了後に生成する（取り込んだ最新の savedAt を競合判定基準にするため）
+    .then(() => gasPost(buildRecord(state)))
+    .catch(err => {
+      // 他端末の保存と競合：打刻・入力中のこの端末のデータを優先して上書き再送
+      if (err && err.message === 'conflict') {
+        showToast('⚠ 他の端末の変更を上書き保存しました', true);
+        return gasPost({ ...buildRecord(state), baseSavedAt: '' });
+      }
+      throw err;
+    })
+    .then(res => {
+      _syncDirty = false;
+      // サーバー付与の savedAt を取り込み、次回保存の競合判定基準を最新化
+      if (res && res.record && res.record.savedAt && state) {
+        state.savedAt = res.record.savedAt;
+        const local = appData[res.record.driverId] && appData[res.record.driverId][res.record.date];
+        if (local) local.savedAt = res.record.savedAt;
+      }
+    })
     .catch(() => {
       _syncDirty = true;
       // 連続失敗時のトースト連打を防ぐ（10秒に1回）
@@ -2826,7 +2856,8 @@ function confirmPunch() {
     if (note)    { todayState.endPlace = note; todayState.note = note; }
     if (!appData[currentDriverId]) appData[currentDriverId] = {};
     const dateStr = todayState.startDate || todayKey();
-    appData[currentDriverId][dateStr] = { ...todayState, breaks:[...todayState.breaks], savedAt:new Date().toISOString() };
+    // savedAt はサーバー付与値（todayState.savedAt に取り込み済み）をそのまま引き継ぐ
+    appData[currentDriverId][dateStr] = { ...todayState, breaks:[...todayState.breaks] };
     const savedRecord = JSON.parse(JSON.stringify(appData[currentDriverId][dateStr]));
     _postEndState = savedRecord;
     _postEndDate  = savedRecord.startDate || dateStr;
@@ -3106,7 +3137,7 @@ function startLodgingTransition() {
   const day1Breaks = todayState.breaks.map((b, idx) =>
     idx === todayState.breaks.length - 1 ? { ...b, end: null } : { ...b }
   );
-  const day1Record = { ...todayState, breaks: day1Breaks, end: null, savedAt: new Date().toISOString(), date: day1Key };
+  const day1Record = { ...todayState, breaks: day1Breaks, end: null, date: day1Key };
   if (!appData[currentDriverId]) appData[currentDriverId] = {};
   appData[currentDriverId][day1Key] = day1Record;
 

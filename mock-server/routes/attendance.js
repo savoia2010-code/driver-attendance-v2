@@ -184,7 +184,18 @@ function saveRecord(data) {
 
   const records = loadRecords();
   const idx     = records.findIndex(r => r.driverId === driverId && r.date === dateStr);
-  const record  = { ...data, date: dateStr, savedAt: nowJST() };
+
+  // 楽観的競合検知：クライアントが基準にした savedAt（baseSavedAt）が
+  // サーバー上の savedAt と異なる場合、他の端末が先に保存している
+  // （baseSavedAt が空・未指定の場合は従来どおり上書き保存）
+  if (idx >= 0 && data.baseSavedAt && records[idx].savedAt &&
+      data.baseSavedAt !== records[idx].savedAt) {
+    return { success: false, error: 'conflict', latest: records[idx] };
+  }
+
+  // savedAt はサーバー側で付与（ミリ秒精度で一意にし、競合判定の基準にする）
+  const record = { ...data, date: dateStr, savedAt: new Date().toISOString() };
+  delete record.baseSavedAt;
 
   if (idx >= 0) {
     records[idx] = { ...records[idx], ...record };
