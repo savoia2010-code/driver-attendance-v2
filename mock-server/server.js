@@ -12,7 +12,9 @@ const app  = express();
 const PORT = 3000;
 
 app.use(cors());
-app.use(express.json());
+// 実GASと同様に text/plain で届くJSONボディも受け付ける
+// （フロントはCORSプリフライト回避のため text/plain で送信する）
+app.use(express.json({ type: () => true }));
 
 // action → handler のマッピング
 const ACTION_MAP = {
@@ -25,7 +27,8 @@ const ACTION_MAP = {
 
 // GASのdoPostと同じ形式でリクエストを受け付けるエンドポイント
 app.post('/mock-gas', (req, res) => {
-  const { action, ...params } = req.body;
+  // token は認証用フィールド（モックでは検証せず、データに混入しないよう除去のみ）
+  const { action, token, ...params } = req.body;
   console.log(`[${new Date().toLocaleString('ja-JP')}] action=${action}`);
 
   const handler = ACTION_MAP[action];

@@ -1462,11 +1462,14 @@ async function gasGet(params) {
 }
 
 // POST型リクエスト（モックサーバー・実GAS共通）
+// Content-Type は text/plain にする：application/json だとブラウザがCORSプリフライト
+// （OPTIONS）を送り、実GASはこれに応答できず通信が失敗するため。
+// GAS側・モックサーバー側ともボディをJSONとして解釈する。
 async function gasPost(data) {
   const res  = await fetchWithTimeout(CONFIG.GAS_URL, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(data)
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body:    JSON.stringify({ token: CONFIG.APP_TOKEN || '', ...data })
   }, 15000);
   const json = await res.json();
   if (json && json.error) {

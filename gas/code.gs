@@ -1,0 +1,291 @@
+/**
+ * 勤怠管理アプリ GASバックエンド
+ *
+ * フロントエンド（index.html）が呼び出す8アクションを実装：
+ *   getInit / getRecords / getRecentRecords / saveRecord / deleteRecord /
+ *   saveDriver / saveChecker / verifyAdminKey
+ *
+ * ■ スクリプトプロパティ（プロジェクトの設定 → スクリプトプロパティ）
+ *   SPREADSHEET_ID … データ保存先スプレッドシートのID（必須）
+ *   ACCESS_TOKEN   … APIアクセストークン。設定すると全リクエストで token の一致を検証。
+ *                    フロントの config.js の APP_TOKEN と同じ値にする（推奨）
+ *   ADMIN_KEY      … 管理者モードのキー（必須）
+ *
+ * ■ シート構造（無ければ自動作成される）
+ *   drivers  : id | name | url_token
+ *   checkers : id | name
+ *   records  : driverId | date | driverName | clockIn | clockOut | status | savedAt | json
+ *              → レコード本体は json 列（全フィールドのJSON）。他の列は閲覧用。
+ *
+ * ■ 同時書き込み対策
+ *   書き込み系アクションは LockService で直列化（read-modify-write の原子性を確保）。
+ *   saveRecord は baseSavedAt による楽観的競合検知に対応（mock-server と同一仕様）。
+ */
+
+// ============================================================
+// エントリポイント
+// ============================================================
+
+function doPost(e) {
+  var body;
+  try {
+    // フロントは text/plain で送信する（application/json だと
+    // CORSプリフライトが発生し、GASは OPTIONS に応答できないため）
+    body = JSON.parse(e.postData.contents);
+  } catch (err) {
+    return jsonOut_({ success: false, error: 'リクエストの形式が不正です' });
+  }
+
+  // ── 最低限の認証チェック（トークンはスクリプトプロパティから取得） ──
+  var requiredToken = props_().getProperty('ACCESS_TOKEN');
+  if (requiredToken && body.token !== requiredToken) {
+    return jsonOut_({ success: false, error: 'unauthorized' });
+  }
+  delete body.token;
+
+  var action = body.action;
+  delete body.action;
+
+  try {
+    switch (action) {
+      // 読み取り系
+      case 'getInit':           return jsonOut_(getInit_());
+      case 'getRecords':        return jsonOut_(getRecords_(body));
+      case 'getRecentRecords':  return jsonOut_(getRecentRecords_(body));
+      case 'verifyAdminKey':    return jsonOut_(verifyAdminKey_(body));
+      // 書き込み系（LockServiceで直列化）
+      case 'saveRecord':        return jsonOut_(withLock_(function() { return saveRecord_(body); }));
+      case 'deleteRecord':      return jsonOut_(withLock_(function() { return deleteRecord_(body); }));
+      case 'saveDriver':        return jsonOut_(withLock_(function() { return saveDriver_(body); }));
+      case 'saveChecker':       return jsonOut_(withLock_(function() { return saveChecker_(body); }));
+      default:
+        return jsonOut_({ success: false, error: '未知のaction: ' + action });
+    }
+  } catch (err) {
+    return jsonOut_({ success: false, error: String(err && err.message || err) });
+  }
+}
+
+function doGet(e) {
+  // 死活確認用（データは返さない）
+  return jsonOut_({ status: 'ok' });
+}
+
+// ============================================================
+// アクション実装
+// ============================================================
+
+function verifyAdminKey_(p) {
+  var adminKey = props_().getProperty('ADMIN_KEY');
+  if (!adminKey) return { success: false, error: 'ADMIN_KEY が未設定です' };
+  return { success: p.key === adminKey };
+}
+
+function getInit_() {
+  return {
+    success: true,
+    drivers: readDrivers_(),
+    checkers: readCheckers_(),
+  };
+}
+
+function getRecords_(p) {
+  if (!p.driverId) return { success: false, error: 'driverId が必要です' };
+  var records = readAllRecords_()
+    .filter(function(r) { return r.driverId === p.driverId; })
+    .filter(function(r) { return !p.from || r.date >= p.from; })
+    .filter(function(r) { return !p.to   || r.date <= p.to; })
+    .sort(function(a, b) { return a.date < b.date ? -1 : 1; });
+  return { success: true, records: records };
+}
+
+function getRecentRecords_(p) {
+  if (!p.driverId) return { success: false, error: 'driverId が必要です' };
+  var records = readAllRecords_()
+    .filter(function(r) { return r.driverId === p.driverId; })
+    .sort(function(a, b) { return a.date < b.date ? 1 : -1; })
+    .slice(0, Number(p.limit) || 10);
+  return { success: true, records: records };
+}
+
+// 日報レコードを driverId + date で upsert（要ロック済み）
+function saveRecord_(data) {
+  if (!data.driverId || !data.date) return { success: false, error: 'driverId と date が必要です' };
+  var dateStr = String(data.date).slice(0, 10);  // YYYY-MM-DD に正規化
+
+  var sheet = recordsSheet_();
+  var rowIndex = findRecordRow_(sheet, data.driverId, dateStr);  // 見つからなければ -1
+
+  // ── 楽観的競合検知（mock-server と同一仕様） ──
+  // baseSavedAt が空・未指定なら従来どおり上書き保存
+  if (rowIndex > 0 && data.baseSavedAt) {
+    var existing = rowToRecord_(sheet, rowIndex);
+    if (existing && existing.savedAt && data.baseSavedAt !== existing.savedAt) {
+      return { success: false, error: 'conflict', latest: existing };
+    }
+  }
+
+  var record = {};
+  for (var k in data) record[k] = data[k];
+  record.date = dateStr;
+  record.savedAt = new Date().toISOString();  // サーバー側で付与（ミリ秒精度）
+  delete record.baseSavedAt;
+
+  var row = [
+    record.driverId,
+    record.date,
+    record.driverName || '',
+    record.clockIn    || '',
+    record.clockOut   || '',
+    record.status     || '',
+    record.savedAt,
+    JSON.stringify(record),
+  ];
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+  } else {
+    sheet.appendRow(row);
+  }
+  return { success: true, message: '記録を保存しました', record: record };
+}
+
+// 記録削除（要ロック済み）
+function deleteRecord_(p) {
+  if (!p.driverId || !p.date) return { success: false, error: 'driverId と date が必要です' };
+  var dateStr = String(p.date).slice(0, 10);
+  var sheet = recordsSheet_();
+  var rowIndex = findRecordRow_(sheet, p.driverId, dateStr);
+  if (rowIndex < 0) return { success: false, error: '削除対象の記録が見つかりません' };
+  sheet.deleteRow(rowIndex);
+  return { success: true, message: '記録を削除しました' };
+}
+
+// ドライバーを id で upsert（要ロック済み）
+function saveDriver_(p) {
+  if (!p.id || !p.name) return { success: false, error: 'id と name が必要です' };
+  var sheet = driversSheet_();
+  var values = sheet.getDataRange().getDisplayValues();
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0] === p.id) {
+      sheet.getRange(i + 1, 2).setValue(p.name);
+      return { success: true, message: 'ドライバー名を更新しました' };
+    }
+  }
+  sheet.appendRow([p.id, p.name, p.url_token || '']);
+  return { success: true, message: 'ドライバーを追加しました' };
+}
+
+// 確認者を追加（重複チェックあり・要ロック済み）
+function saveChecker_(p) {
+  if (!p.name) return { success: false, error: 'name が必要です' };
+  var sheet = checkersSheet_();
+  var values = sheet.getDataRange().getDisplayValues();
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][1] === p.name) return { success: true, message: '登録済みの確認者です' };
+  }
+  sheet.appendRow(['C' + Date.now(), p.name]);
+  return { success: true, message: '確認者を追加しました' };
+}
+
+// ============================================================
+// シートアクセス
+// ============================================================
+
+var RECORDS_HEADER  = ['driverId', 'date', 'driverName', 'clockIn', 'clockOut', 'status', 'savedAt', 'json'];
+var DRIVERS_HEADER  = ['id', 'name', 'url_token'];
+var CHECKERS_HEADER = ['id', 'name'];
+
+function spreadsheet_() {
+  var id = props_().getProperty('SPREADSHEET_ID');
+  if (!id) throw new Error('スクリプトプロパティ SPREADSHEET_ID が未設定です');
+  return SpreadsheetApp.openById(id);
+}
+
+// シートを取得（無ければヘッダー付きで作成）
+function getSheet_(name, header) {
+  var ss = spreadsheet_();
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(header);
+    // 日付・数値の自動変換で値が壊れないよう、全列を書式「書式なしテキスト」にする
+    sheet.getRange(1, 1, sheet.getMaxRows(), header.length).setNumberFormat('@');
+  }
+  return sheet;
+}
+
+function recordsSheet_()  { return getSheet_('records',  RECORDS_HEADER); }
+function driversSheet_()  { return getSheet_('drivers',  DRIVERS_HEADER); }
+function checkersSheet_() { return getSheet_('checkers', CHECKERS_HEADER); }
+
+function readDrivers_() {
+  var values = driversSheet_().getDataRange().getDisplayValues();
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    if (!values[i][0]) continue;
+    out.push({ id: values[i][0], name: values[i][1], url_token: values[i][2] || '' });
+  }
+  return out;
+}
+
+function readCheckers_() {
+  var values = checkersSheet_().getDataRange().getDisplayValues();
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    if (!values[i][1]) continue;
+    out.push({ id: values[i][0], name: values[i][1] });
+  }
+  return out;
+}
+
+function readAllRecords_() {
+  var values = recordsSheet_().getDataRange().getDisplayValues();
+  var jsonCol = RECORDS_HEADER.indexOf('json');
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    var raw = values[i][jsonCol];
+    if (!raw) continue;
+    try { out.push(JSON.parse(raw)); } catch (e) { /* 壊れた行はスキップ */ }
+  }
+  return out;
+}
+
+// driverId + date が一致する行番号（1始まり）を返す。無ければ -1
+function findRecordRow_(sheet, driverId, dateStr) {
+  var values = sheet.getDataRange().getDisplayValues();
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0] === driverId && String(values[i][1]).slice(0, 10) === dateStr) return i + 1;
+  }
+  return -1;
+}
+
+function rowToRecord_(sheet, rowIndex) {
+  var jsonCol = RECORDS_HEADER.indexOf('json');
+  var raw = sheet.getRange(rowIndex, jsonCol + 1).getDisplayValue();
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+// ============================================================
+// ユーティリティ
+// ============================================================
+
+function props_() {
+  return PropertiesService.getScriptProperties();
+}
+
+// 書き込み処理を直列化する（同時書き込みによる行の二重追加・消失を防ぐ）
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);  // 最大10秒待つ
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function jsonOut_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
