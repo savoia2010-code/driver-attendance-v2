@@ -1,13 +1,27 @@
 // 自動テスト：モックサーバーが起動している状態で実行する
-// テスト前に records.json を自動リセットする
+// テスト前に全データファイルを初期状態にリセットする
 
 const fs   = require('fs');
 const path = require('path');
 
-// ── テスト前にrecords.jsonをリセット ──
-const recordsPath = path.join(__dirname, 'data/records.json');
-fs.writeFileSync(recordsPath, '[]', 'utf8');
-console.log('records.json をリセットしました\n');
+// ── テスト前にデータファイルをリセット ──
+// （リセットしないと前回テストが追加した D099 / テスト確認者 が残り、件数チェックが失敗する）
+const BASE_DRIVERS = [
+  { id: 'D001', name: '田中 太郎', url_token: 'tanaka-taro' },
+  { id: 'D002', name: '佐藤 次郎', url_token: 'sato-jiro' },
+  { id: 'D003', name: '鈴木 三郎', url_token: 'suzuki-saburo' },
+  { id: 'D004', name: '高橋 四郎', url_token: 'takahashi-shiro' },
+  { id: 'D005', name: '伊藤 五郎', url_token: 'ito-goro' },
+];
+const BASE_CHECKERS = [
+  { id: 'C001', name: '山田 一郎' },
+  { id: 'C002', name: '中村 花子' },
+  { id: 'C003', name: '小林 二郎' },
+];
+fs.writeFileSync(path.join(__dirname, 'data/records.json'), '[]', 'utf8');
+fs.writeFileSync(path.join(__dirname, 'data/drivers.json'),  JSON.stringify(BASE_DRIVERS, null, 2), 'utf8');
+fs.writeFileSync(path.join(__dirname, 'data/checkers.json'), JSON.stringify(BASE_CHECKERS, null, 2), 'utf8');
+console.log('データファイルをリセットしました\n');
 
 const BASE_URL = 'http://localhost:3000/mock-gas';
 const today    = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })).toISOString().split('T')[0];

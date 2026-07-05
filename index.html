@@ -1099,7 +1099,7 @@ body:has(#loading-overlay.show) .bottom-nav {
       <div class="rf-label" style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px;">新規ドライバーを追加</div>
       <div style="display:flex;gap:8px;">
         <input class="rf-input" id="newDriverName" type="text" placeholder="名前を入力" style="flex:1;">
-        <button class="btn btn-primary" onclick="addDriver()" style="white-space:nowrap;">追加</button>
+        <button class="btn btn-primary" id="btn-add-driver" onclick="addDriver()" style="white-space:nowrap;">追加</button>
       </div>
     </div>
   </div>
@@ -1501,6 +1501,30 @@ function isUIBlocked() {
 function lockedDelay(fn, ms) {
   lockUI();
   setTimeout(() => { unlockUI(); fn(); }, ms);
+}
+
+// ============================================================
+// 二重送信防止（送信系アクションの共通ガード）
+// ============================================================
+const _inflight = new Set();
+
+// 同一キーの処理が実行中なら黙って拒否。ボタン無効化・ローディング・
+// UIロックをまとめて管理し、finally で確実に解除する
+async function guardedAction(key, fn, opts = {}) {
+  if (_inflight.has(key)) return;
+  _inflight.add(key);
+  const btn = opts.btn ? document.getElementById(opts.btn) : null;
+  if (btn) btn.disabled = true;
+  if (opts.loading) showLoading(opts.loading);
+  lockUI();
+  try {
+    return await fn();
+  } finally {
+    _inflight.delete(key);
+    if (btn) btn.disabled = false;
+    if (opts.loading) hideLoading();
+    unlockUI();
+  }
 }
 
 // ============================================================
@@ -1953,8 +1977,7 @@ async function deleteRecordCard(date) {
   openConfirm(
     '記録を削除しますか？',
     `${date} の記録を削除します。この操作は取り消せません。`,
-    async () => {
-      showLoading('削除中');
+    () => guardedAction('deleteRecord:' + date, async () => {
       try {
         const res = await gasPost({ action: 'deleteRecord', driverId: currentDriverId, date });
         if (!res.success) throw new Error(res.error || '削除失敗');
@@ -1963,10 +1986,8 @@ async function deleteRecordCard(date) {
         renderRecords(false);
       } catch (e) {
         showToast('削除に失敗しました', true);
-      } finally {
-        hideLoading();
       }
-    },
+    }, { loading: '削除中' }),
     '削除',
     true
   );
@@ -2347,18 +2368,20 @@ async function addDriver() {
   const name  = input ? input.value.trim() : '';
   if (!name) { showToast('名前を入力してください', true); return; }
   if (drivers.length >= 10) { showToast('最大10名まで登録できます', true); return; }
-  const id = 'D' + Date.now();
-  try {
-    const res = await gasPost({ action: 'saveDriver', id, name });
-    if (!res.success) throw new Error(res.error || '追加失敗');
-    drivers.push({ id, name });
-    _saveDriversCache(drivers);
-    if (input) input.value = '';
-    renderDrivers();
-    showToast('✓ ' + name + ' を追加しました');
-  } catch(e) {
-    showToast('⚠ サーバー保存に失敗しました', true);
-  }
+  return guardedAction('saveDriver', async () => {
+    const id = 'D' + Date.now();
+    try {
+      const res = await gasPost({ action: 'saveDriver', id, name });
+      if (!res.success) throw new Error(res.error || '追加失敗');
+      drivers.push({ id, name });
+      _saveDriversCache(drivers);
+      if (input) input.value = '';
+      renderDrivers();
+      showToast('✓ ' + name + ' を追加しました');
+    } catch(e) {
+      showToast('⚠ サーバー保存に失敗しました', true);
+    }
+  }, { btn: 'btn-add-driver', loading: '保存中...' });
 }
 
 // ============================================================
@@ -2372,30 +2395,27 @@ async function submitAdminKey() {
 
   if (!key) { errEl.textContent = 'キーを入力してください'; errEl.style.display = 'block'; return; }
 
-  const btn = document.getElementById('admin-key-submit');
-  btn.disabled = true;
-
-  try {
-    showLoading('確認中...');
-    // セキュリティ修正：キーはPOSTボディで送信（URLに含めない）
-    const res = await gasPost({ action: 'verifyAdminKey', key });
-    hideLoading();
-    if (res.success) {
-      _adminMode = true;
-      document.getElementById('screen-admin-key').classList.remove('active');
-      await startApp();
-    } else {
-      errEl.textContent   = '管理者キーが正しくありません';
+  return guardedAction('adminKey', async () => {
+    try {
+      showLoading('確認中...');
+      // セキュリティ修正：キーはPOSTボディで送信（URLに含めない）
+      const res = await gasPost({ action: 'verifyAdminKey', key });
+      hideLoading();
+      if (res.success) {
+        _adminMode = true;
+        document.getElementById('screen-admin-key').classList.remove('active');
+        await startApp();
+      } else {
+        errEl.textContent   = '管理者キーが正しくありません';
+        errEl.style.display = 'block';
+        input.value         = '';
+      }
+    } catch(err) {
+      hideLoading();
+      errEl.textContent   = '通信エラーが発生しました';
       errEl.style.display = 'block';
-      input.value         = '';
     }
-  } catch(err) {
-    hideLoading();
-    errEl.textContent   = '通信エラーが発生しました';
-    errEl.style.display = 'block';
-  } finally {
-    btn.disabled = false;
-  }
+  }, { btn: 'admin-key-submit' });
 }
 
 // ============================================================
@@ -2571,9 +2591,39 @@ function buildRecord(state) {
   };
 }
 
+// 保存リクエストの直列キュー：デバウンス自動保存と即時保存が並行実行され、
+// 古い内容が新しい内容を上書きする逆転を防ぐ
+let _syncChain = Promise.resolve();
+let _syncDirty = false;
+let _syncErrorToastAt = 0;
+
+function enqueueSync(state) {
+  const payload = buildRecord(state);  // 呼び出し時点のスナップショット
+  _syncChain = _syncChain
+    .then(() => gasPost(payload))
+    .then(() => { _syncDirty = false; })
+    .catch(() => {
+      _syncDirty = true;
+      // 連続失敗時のトースト連打を防ぐ（10秒に1回）
+      if (Date.now() - _syncErrorToastAt > 10000) {
+        _syncErrorToastAt = Date.now();
+        showToast('⚠ サーバー同期に失敗しました（自動で再送します）', true);
+      }
+    });
+  return _syncChain;
+}
+
+// オンライン復帰時、未同期があれば現在の状態を再送
+window.addEventListener('online', () => {
+  if (!_syncDirty) return;
+  const st = getActiveState();
+  if (st && st.start) enqueueSync(st);
+});
+
 async function syncToGAS(state) {
   if (!currentDriverId || !state || !state.start) return;
-  try { await gasPost(buildRecord(state)); } catch(e) {}
+  clearTimeout(_gasSyncTimer);  // 保留中のデバウンス保存は不要（この保存が最新）
+  return enqueueSync(state);
 }
 
 async function autoSaveRecord(rec) {
@@ -2581,7 +2631,7 @@ async function autoSaveRecord(rec) {
   if (!appData[currentDriverId]) appData[currentDriverId] = {};
   const dateStr = rec.startDate || rec.date || todayKey();
   appData[currentDriverId][dateStr] = { ...rec };
-  try { await gasPost(buildRecord(rec)); } catch(e) {}
+  return enqueueSync(rec);
 }
 
 // ============================================================
@@ -3009,18 +3059,24 @@ function alcBStartCheckerSelect() {
 }
 
 async function alcBStartAddChecker() {
-  const inp = document.getElementById('alcBStartCheckerNew');
-  const name = inp ? inp.value.trim() : ''; if (!name) return;
-  const existing = (_checkerCache || []).map(c => typeof c === 'string' ? c : c.name);
-  if (!existing.includes(name)) {
-    try { await gasPost({ action: 'saveChecker', name }); } catch(e) {}
-    _checkerCache = [...(_checkerCache || []), { id:'', name }];
-    _saveCheckerCache(_checkerCache);
-  }
-  const sel = document.getElementById('alcBStartChecker');
-  if (sel) { buildCheckerOptions(sel, name); sel.value = name; }
-  alcBStartCheckerSelect();
-  if (inp) inp.value = '';
+  return guardedAction('saveChecker', async () => {
+    const inp = document.getElementById('alcBStartCheckerNew');
+    const name = inp ? inp.value.trim() : ''; if (!name) return;
+    const existing = (_checkerCache || []).map(c => typeof c === 'string' ? c : c.name);
+    if (!existing.includes(name)) {
+      try {
+        await gasPost({ action: 'saveChecker', name });
+      } catch(e) {
+        showToast('⚠ 確認者のサーバー保存に失敗しました', true);
+      }
+      _checkerCache = [...(_checkerCache || []), { id:'', name }];
+      _saveCheckerCache(_checkerCache);
+    }
+    const sel = document.getElementById('alcBStartChecker');
+    if (sel) { buildCheckerOptions(sel, name); sel.value = name; }
+    alcBStartCheckerSelect();
+    if (inp) inp.value = '';
+  });
 }
 
 function confirmAlcBStartModal() {
@@ -3136,18 +3192,24 @@ function alcAModalCheckerSelect() {
 }
 
 async function alcAModalAddChecker() {
-  const inp = document.getElementById('alcAModalCheckerNew');
-  const name = inp ? inp.value.trim() : ''; if (!name) return;
-  const existing = (_checkerCache || []).map(c => typeof c === 'string' ? c : c.name);
-  if (!existing.includes(name)) {
-    try { await gasPost({ action: 'saveChecker', name }); } catch(e) {}
-    _checkerCache = [...(_checkerCache || []), { id:'', name }];
-    _saveCheckerCache(_checkerCache);
-  }
-  const sel = document.getElementById('alcAModalChecker');
-  if (sel) { buildCheckerOptions(sel, name); sel.value = name; }
-  alcAModalCheckerSelect();
-  if (inp) inp.value = '';
+  return guardedAction('saveChecker', async () => {
+    const inp = document.getElementById('alcAModalCheckerNew');
+    const name = inp ? inp.value.trim() : ''; if (!name) return;
+    const existing = (_checkerCache || []).map(c => typeof c === 'string' ? c : c.name);
+    if (!existing.includes(name)) {
+      try {
+        await gasPost({ action: 'saveChecker', name });
+      } catch(e) {
+        showToast('⚠ 確認者のサーバー保存に失敗しました', true);
+      }
+      _checkerCache = [...(_checkerCache || []), { id:'', name }];
+      _saveCheckerCache(_checkerCache);
+    }
+    const sel = document.getElementById('alcAModalChecker');
+    if (sel) { buildCheckerOptions(sel, name); sel.value = name; }
+    alcAModalCheckerSelect();
+    if (inp) inp.value = '';
+  });
 }
 
 function confirmAlcAModal() {
