@@ -1430,7 +1430,8 @@ let _dedicatedMode = false; // ドライバー専用URLモード
 
 // URLパラメータ
 const _urlParams   = new URLSearchParams(window.location.search);
-const _urlDriverId = _urlParams.get('driver');
+const _urlDriverId = _urlParams.get('driver');  // 旧形式（認可なし・案内表示用に残す）
+const _urlToken    = _urlParams.get('token');   // ドライバー専用URLの秘密トークン
 const _urlMode     = _urlParams.get('mode');
 // セキュリティ修正：管理者キーは URL に含めず、フォームから POST で送信する
 
@@ -1444,6 +1445,30 @@ const _store = {
   removeItem(k) { try { localStorage.removeItem(k); }        catch(e) { delete _mem[k]; } },
   clear()       { try { localStorage.clear(); }              catch(e) { Object.keys(_mem).forEach(k => delete _mem[k]); } }
 };
+
+// ============================================================
+// 認可情報（サーバー側で毎回検証される）
+// ============================================================
+const DRIVER_TOKEN_KEY      = 'driver_token_v1';       // 専用URLのトークン（ブックマーク無しでも継続利用できるよう保存）
+const DRIVER_TOKEN_INFO_KEY = 'driver_token_info_v1';  // トークン→ドライバーの解決結果キャッシュ
+
+// ドライバートークン：URLパラメータ優先、無ければ前回保存分
+let _driverToken = _urlToken || _store.getItem(DRIVER_TOKEN_KEY) || '';
+// 管理者キー：検証成功後にメモリのみで保持（localStorage には保存しない）
+let _adminKey = '';
+
+function _loadTokenInfo() {
+  try { return JSON.parse(_store.getItem(DRIVER_TOKEN_INFO_KEY)); } catch(e) { return null; }
+}
+function _saveTokenInfo(token, driver) {
+  _store.setItem(DRIVER_TOKEN_KEY, token);
+  _store.setItem(DRIVER_TOKEN_INFO_KEY, JSON.stringify({ token, id: driver.id, name: driver.name }));
+}
+function _clearDriverToken() {
+  _driverToken = '';
+  _store.removeItem(DRIVER_TOKEN_KEY);
+  _store.removeItem(DRIVER_TOKEN_INFO_KEY);
+}
 
 // ============================================================
 // GAS / モックAPI 通信
@@ -1466,10 +1491,14 @@ async function gasGet(params) {
 // （OPTIONS）を送り、実GASはこれに応答できず通信が失敗するため。
 // GAS側・モックサーバー側ともボディをJSONとして解釈する。
 async function gasPost(data) {
+  // 認可情報を自動付与（サーバー側で毎回検証される）
+  const auth = { token: CONFIG.APP_TOKEN || '' };
+  if (_driverToken) auth.driverToken = _driverToken;
+  if (_adminKey)    auth.adminKey    = _adminKey;
   const res  = await fetchWithTimeout(CONFIG.GAS_URL, {
     method:  'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body:    JSON.stringify({ token: CONFIG.APP_TOKEN || '', ...data })
+    body:    JSON.stringify({ ...auth, ...data })
   }, 15000);
   const json = await res.json();
   if (json && json.error) {
@@ -2374,6 +2403,9 @@ function renderDrivers() {
         <button class="btn btn-ghost" style="padding:6px 14px;font-size:13px;color:var(--accent);border-color:rgba(251,146,60,0.4);" onclick="copyDriverUrl('${escHtml(d.id)}','${escHtml(d.name)}')">
           🔗 専用URL
         </button>
+        <button class="btn btn-ghost" style="padding:6px 14px;font-size:13px;" onclick="regenDriverUrl('${escHtml(d.id)}','${escHtml(d.name)}')">
+          ♻ 再発行
+        </button>
       </div>
     </div>`).join('') || '<div class="empty-state">ドライバーが登録されていません</div>';
 }
@@ -2385,8 +2417,14 @@ function selectDriverAdmin(id) {
 }
 
 function copyDriverUrl(id, name) {
+  const d = drivers.find(x => x.id === id);
+  if (!d || !d.url_token) {
+    // 旧データ等でトークン未発行の場合は先に発行する
+    regenDriverUrl(id, name);
+    return;
+  }
   const base = location.origin + location.pathname;
-  const url  = base + '?driver=' + encodeURIComponent(id);
+  const url  = base + '?token=' + encodeURIComponent(d.url_token);
   if (navigator.clipboard) {
     navigator.clipboard.writeText(url)
       .then(() => showToast('✓ ' + name + ' の専用URLをコピーしました'))
@@ -2394,6 +2432,27 @@ function copyDriverUrl(id, name) {
   } else {
     prompt(name + ' の専用URL（コピーしてください）', url);
   }
+}
+
+// 専用URLを再発行する（旧URLは無効になる。URLが漏れた場合の無効化にも使う）
+function regenDriverUrl(id, name) {
+  openConfirm(
+    '専用URLを発行しますか？',
+    name + ' の今までの専用URLは使えなくなります。新しいURLを本人に配布し直してください。',
+    () => guardedAction('regenToken', async () => {
+      try {
+        const res = await gasPost({ action: 'regenerateDriverToken', id });
+        if (!res.success) throw new Error(res.error || '再発行失敗');
+        const d = drivers.find(x => x.id === id);
+        if (d) d.url_token = res.driver.url_token;
+        _saveDriversCache(drivers);
+        copyDriverUrl(id, name);
+      } catch(e) {
+        showToast('専用URLの発行に失敗しました', true);
+      }
+    }, { loading: '発行中...' }),
+    '発行する', false
+  );
 }
 
 async function addDriver() {
@@ -2406,11 +2465,12 @@ async function addDriver() {
     try {
       const res = await gasPost({ action: 'saveDriver', id, name });
       if (!res.success) throw new Error(res.error || '追加失敗');
-      drivers.push({ id, name });
+      // サーバー生成の url_token（専用URLの秘密トークン）を含めて保持
+      drivers.push(res.driver || { id, name });
       _saveDriversCache(drivers);
       if (input) input.value = '';
       renderDrivers();
-      showToast('✓ ' + name + ' を追加しました');
+      showToast('✓ ' + name + ' を追加しました。「🔗 専用URL」で本人に配布してください');
     } catch(e) {
       showToast('⚠ サーバー保存に失敗しました', true);
     }
@@ -2436,6 +2496,7 @@ async function submitAdminKey() {
       hideLoading();
       if (res.success) {
         _adminMode = true;
+        _adminKey  = key;  // 以降のリクエストに付与（サーバー側で毎回検証・メモリのみで保持）
         document.getElementById('screen-admin-key').classList.remove('active');
         await startApp();
       } else {
@@ -2475,13 +2536,14 @@ async function startApp() {
   }
 
   // ドライバー設定
-  if (_urlDriverId) {
-    _dedicatedMode = true;
-    if (!drivers.find(d => d.id === _urlDriverId)) {
-      drivers.push({ id: _urlDriverId, name: '---' });
-    }
-    setCurrentDriver(_urlDriverId);
+  if (_driverToken) {
+    // 専用URL（?token=）：トークンから本人を解決する
+    await resolveDedicatedDriver();
   } else {
+    if (_urlDriverId) {
+      // 旧形式（?driver=ID）はサーバー認可を通らないため案内する
+      showToast('この専用URLは旧形式です。管理者に新しいURLの発行を依頼してください', true);
+    }
     const saved = _store.getItem(CUR_DRIVER_KEY);
     if (saved && drivers.find(d => d.id === saved)) setCurrentDriver(saved);
     else if (drivers.length > 0) setCurrentDriver(drivers[0].id);
@@ -2494,6 +2556,48 @@ async function startApp() {
   showScreen('screen-punch');
   // 各画面の初期描画（後のパートで実装）
   if (typeof renderPunchScreen === 'function') renderPunchScreen();
+}
+
+// 専用URLのトークンからドライバー本人を解決して固定モードにする
+// 解決結果はキャッシュし、2回目以降は即時起動（バックグラウンドで再検証）
+async function resolveDedicatedDriver() {
+  const applyDriver = (id, name) => {
+    _dedicatedMode = true;
+    if (!drivers.find(d => d.id === id)) drivers.push({ id, name });
+    setCurrentDriver(id);
+  };
+  const onInvalid = () => {
+    _clearDriverToken();
+    _dedicatedMode = false;
+    showToast('専用URLが無効です。管理者に再発行を依頼してください', true);
+  };
+
+  const cached = _loadTokenInfo();
+  if (cached && cached.token === _driverToken && cached.id) {
+    // キャッシュ即時適用＋バックグラウンド再検証（再発行で無効化されていないか）
+    applyDriver(cached.id, cached.name);
+    gasPost({ action: 'verifyDriverToken' })
+      .then(vt => { if (!(vt && vt.success)) onInvalid(); })
+      // gasPost はエラーレスポンスを例外にするため、トークン無効はここに来る。通信断は無視（次回起動時に再検証）
+      .catch(e => { if (e && e.message === 'invalid token') onInvalid(); });
+    return;
+  }
+
+  showLoading('認証を確認中...');
+  try {
+    const vt = await gasPost({ action: 'verifyDriverToken' });
+    hideLoading();
+    if (vt && vt.success && vt.driver) {
+      _saveTokenInfo(_driverToken, vt.driver);
+      applyDriver(vt.driver.id, vt.driver.name);
+    } else {
+      onInvalid();
+    }
+  } catch(e) {
+    hideLoading();
+    if (e && e.message === 'invalid token') onInvalid();
+    else showToast('認証の確認に失敗しました。通信環境を確認してください', true);
+  }
 }
 
 // ============================================================
