@@ -6,10 +6,11 @@
  *   2. driverToken    … ドライバー個人の秘密トークン（url_token）。自分の記録の読み書きのみ許可
  *   3. adminKey       … 管理者キー。全ドライバーの記録・マスタ管理を許可（総当たり対策あり）
  *
- * フロントエンド（index.html）が呼び出すアクション：
+ * 対応アクション：
  *   認証不要   : verifyAdminKey / verifyDriverToken
- *   ドライバー : getInit（トークンは返らない）/ getRecords / getRecentRecords /
- *                saveRecord / deleteRecord / saveChecker（いずれも自分の分のみ）
+ *   ドライバー : getInit / getDrivers / getCheckers（トークンは返らない）/
+ *                getRecords / getRecentRecords / saveRecord / deleteRecord（自分の分のみ）/
+ *                saveChecker
  *   管理者     : 上記すべて（全ドライバー分）＋ saveDriver / regenerateDriverToken
  *
  * ■ スクリプトプロパティ（プロジェクトの設定 → スクリプトプロパティ）
@@ -67,6 +68,8 @@ function doPost(e) {
 
       // ── 読み取り系 ──
       case 'getInit':           return jsonOut_(getInit_(auth));
+      case 'getDrivers':        return jsonOut_(getDrivers_(auth));
+      case 'getCheckers':       return jsonOut_({ success: true, checkers: readCheckers_() });
       case 'getRecords':        return jsonOut_(guardDriver_(auth, body.driverId) || getRecords_(body));
       case 'getRecentRecords':  return jsonOut_(guardDriver_(auth, body.driverId) || getRecentRecords_(body));
 
@@ -170,18 +173,25 @@ function verifyDriverToken_(auth) {
 // アクション実装
 // ============================================================
 
-function getInit_(auth) {
-  var drivers = readDrivers_().map(function(d) {
-    // url_token はドライバー個人の秘密。管理者以外には返さない
+// url_token はドライバー個人の秘密。管理者以外には返さない
+function stripTokens_(drivers, auth) {
+  return drivers.map(function(d) {
     return auth.isAdmin
       ? { id: d.id, name: d.name, url_token: d.url_token || '' }
       : { id: d.id, name: d.name };
   });
+}
+
+function getInit_(auth) {
   return {
     success: true,
-    drivers: drivers,
+    drivers: stripTokens_(readDrivers_(), auth),
     checkers: readCheckers_(),
   };
+}
+
+function getDrivers_(auth) {
+  return { success: true, drivers: stripTokens_(readDrivers_(), auth) };
 }
 
 function getRecords_(p) {
@@ -203,6 +213,19 @@ function getRecentRecords_(p) {
   return { success: true, records: records };
 }
 
+// 保存を許可するレコードのフィールド（フロントの buildRecord と一致させる）
+// これ以外のフィールドは破棄する：任意フィールド注入によるデータ汚染・肥大化を防ぐ
+var RECORD_ALLOWED_FIELDS = [
+  'driverId', 'driverName', 'date', 'clockIn', 'clockOut', 'status',
+  'breaks', 'manualBreaks', 'fuelEntries',
+  'destination', 'note', 'startMileage', 'endMileage', 'startPlace', 'endPlace',
+  'lodging', 'kumitate', 'bara', 'onetouch', 'kobutsu', 'other', 'count', 'distance',
+  'visits', 'allowances', 'allowanceShortfall', 'allowanceExcess',
+  'alcBMethod', 'alcBRemote', 'alcBResult', 'alcBChecker', 'alcBDate',
+  'alcAMethod', 'alcARemote', 'alcAResult', 'alcAChecker', 'alcADate',
+];
+var RECORD_MAX_JSON_LENGTH = 100000;  // 1レコードの上限（約100KB）
+
 // 日報レコードを driverId + date で upsert（要ロック済み）
 function saveRecord_(data) {
   if (!data.driverId || !data.date) return { success: false, error: 'driverId と date が必要です' };
@@ -220,11 +243,17 @@ function saveRecord_(data) {
     }
   }
 
+  // ホワイトリストのフィールドのみ保存（baseSavedAt もここで自然に落ちる）
   var record = {};
-  for (var k in data) record[k] = data[k];
+  for (var i = 0; i < RECORD_ALLOWED_FIELDS.length; i++) {
+    var k = RECORD_ALLOWED_FIELDS[i];
+    if (k in data) record[k] = data[k];
+  }
   record.date = dateStr;
   record.savedAt = new Date().toISOString();  // サーバー側で付与（ミリ秒精度）
-  delete record.baseSavedAt;
+  if (JSON.stringify(record).length > RECORD_MAX_JSON_LENGTH) {
+    return { success: false, error: '記録データが大きすぎます' };
+  }
 
   var row = [
     record.driverId,

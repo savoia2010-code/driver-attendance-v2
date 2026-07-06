@@ -1700,10 +1700,10 @@ function openDriverModal() {
   const list = document.getElementById('driver-modal-list');
   list.innerHTML = drivers.map(d => `
     <div class="driver-item ${d.id === currentDriverId ? 'selected' : ''}"
-         onclick="selectDriver('${d.id}')">
+         onclick="selectDriver('${escHtml(d.id)}')">
       <div>
-        <div class="driver-item-name">${d.name}</div>
-        <div class="driver-item-id">${d.id}</div>
+        <div class="driver-item-name">${escHtml(d.name)}</div>
+        <div class="driver-item-id">${escHtml(d.id)}</div>
       </div>
     </div>
   `).join('') || '<div class="empty-state">ドライバーが登録されていません</div>';
@@ -1984,8 +1984,8 @@ async function renderRecords(forceReload = false) {
     const dow      = DAY_NAMES[new Date(date + 'T00:00:00').getDay()];
     const [, mo, da] = date.split('-');
     const isHol    = rec.type === 'holiday' || isWeekend(date);
-    const clockIn  = rec.clockIn  || rec.start  || '—';
-    const clockOut = rec.clockOut || rec.end    || '—';
+    const clockIn  = escHtml(rec.clockIn  || rec.start  || '—');
+    const clockOut = escHtml(rec.clockOut || rec.end    || '—');
 
     const tags = [];
     if (isHol)                tags.push('<span class="tag holiday">休出</span>');
@@ -2028,8 +2028,8 @@ async function renderRecords(forceReload = false) {
       </div>
       ${hoursHtml}
       ${mileageHtml}
-      ${rec.destination ? `<div class="record-note">🚚 ${rec.destination}</div>` : ''}
-      ${rec.note        ? `<div class="record-note">📝 ${rec.note}</div>` : ''}
+      ${rec.destination ? `<div class="record-note">🚚 ${escHtml(rec.destination)}</div>` : ''}
+      ${rec.note        ? `<div class="record-note">📝 ${escHtml(rec.note)}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -2256,7 +2256,7 @@ function viewDay1Report() {
     const dt = rec['alc' + side + 'Date'];
     if (!dt) return '—';
     const d = new Date(dt);
-    return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${escHtml(rec['alc'+side+'Checker']||'')} (${rec['alc'+side+'Result']||''})`;
+    return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${escHtml(rec['alc'+side+'Checker']||'')} (${escHtml(rec['alc'+side+'Result']||'')})`;
   };
   const content = document.getElementById('day1ReportContent');
   if (content) {
@@ -3021,7 +3021,7 @@ function renderPunchManualBreaks() {
   list.innerHTML = st.manualBreaks.map((b, i) => `
     <div class="break-mins-row">
       <input type="text" inputmode="numeric" pattern="[0-9]*" class="break-mins-input"
-        value="${b.mins || ''}" placeholder="分"
+        value="${Number(b.mins) || ''}" placeholder="分"
         onchange="updatePunchManualBreak(${i}, Number(this.value)||0)"
         onblur="updatePunchManualBreak(${i}, Number(this.value)||0)">
       <span class="break-mins-unit">分</span>
@@ -3084,12 +3084,12 @@ function renderFuels() {
       <div class="fuel-inputs">
         <div>
           <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">数量（L）</div>
-          <input type="text" inputmode="decimal" class="form-input" value="${f.liters||''}"
+          <input type="text" inputmode="decimal" class="form-input" value="${escHtml(f.liters||'')}"
             placeholder="0.0" oninput="updateFuel(${i},'liters',this.value)">
         </div>
         <div>
           <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">金額（円）</div>
-          <input type="text" inputmode="numeric" class="form-input" value="${f.amount||''}"
+          <input type="text" inputmode="numeric" class="form-input" value="${escHtml(f.amount||'')}"
             placeholder="0" oninput="updateFuel(${i},'amount',this.value)">
         </div>
       </div>
@@ -3451,9 +3451,9 @@ function printDailyReport(date) {
       <td class="c">${i+1}</td>
       <td>${eh(f.shop)}</td>
       <td class="r">${eh(f.odometer)}</td>
-      <td class="r">${f.fuel||''}</td>
-      <td class="r">${f.fuelRegular||''}</td>
-      <td class="r">${f.adblue||''}</td>
+      <td class="r">${eh(f.fuel||'')}</td>
+      <td class="r">${eh(f.fuelRegular||'')}</td>
+      <td class="r">${eh(f.adblue||'')}</td>
     </tr>`).join('')
     : '<tr><td colspan="6" class="empty">記録なし</td></tr>';
 
@@ -3659,10 +3659,10 @@ async function printMonthlyReport(driverId, offset) {
         <td class="c date-cell">${r.mo}/${r.da}(${dow})</td>
         <td>${eh(r.rec.destination||'')}</td>
         <td class="r">${r.dist !== '' ? r.dist : ''}</td>
-        <td class="r">${r.rec.count||''}</td>
-        <td class="r">${r.rec.kumitate||''}</td>
-        <td class="r">${r.rec.bara||''}</td>
-        <td class="r">${r.rec.onetouch||''}</td>
+        <td class="r">${eh(r.rec.count||'')}</td>
+        <td class="r">${eh(r.rec.kumitate||'')}</td>
+        <td class="r">${eh(r.rec.bara||'')}</td>
+        <td class="r">${eh(r.rec.onetouch||'')}</td>
         <td class="r">${r.lodgingAmt||''}</td>
         <td class="r">${r.allowSum||''}</td>
         <td class="r">${r.subtotal||''}</td>
@@ -3914,10 +3914,10 @@ td { border: 1px solid #888; padding: 2px 2px; vertical-align: middle; font-size
           <td class="c date-cell">${r.mo}/${r.da}(${dow})</td>
           <td>${eh(r.rec.destination||'')}</td>
           <td class="r">${r.dist !== '' ? r.dist : ''}</td>
-          <td class="r">${r.rec.count||''}</td>
-          <td class="r">${r.rec.kumitate||''}</td>
-          <td class="r">${r.rec.bara||''}</td>
-          <td class="r">${r.rec.onetouch||''}</td>
+          <td class="r">${eh(r.rec.count||'')}</td>
+          <td class="r">${eh(r.rec.kumitate||'')}</td>
+          <td class="r">${eh(r.rec.bara||'')}</td>
+          <td class="r">${eh(r.rec.onetouch||'')}</td>
           <td class="r">${r.lodgingAmt||''}</td>
           <td class="r">${r.allowSum||''}</td>
           <td class="r">${r.shortfallAmt||''}</td>

@@ -28,9 +28,14 @@ const MOCK_PASSWORD  = '1234';
 const MOCK_ADMIN_KEY = 'admin123';
 
 // ============================================================
-// 認証・認可（GAS実装 gas/code.gs と同一仕様）
+// 認証・認可
+// 認可モデル（resolveAuth / guard* / verifyAdminKey / verifyDriverToken）は
+// GAS実装 gas/code.gs と同一仕様。
+// ※ verifyPassword / getStatus / clockIn / clockOut / alcoholCheck は
+//   旧API互換のモック専用アクションで、GAS本番には存在しない（フロント未使用）
 // ============================================================
 
+// モック専用（旧API・GAS本番には無い）
 function verifyPassword({ password }) {
   if (!password) return { success: false, error: 'password が必要です' };
   return { success: password === MOCK_PASSWORD };
@@ -248,6 +253,19 @@ function alcoholCheck({ driverId, value }) {
 // 日報レコード（フル保存・取得・削除）
 // ============================================================
 
+// 保存を許可するレコードのフィールド（gas/code.gs の RECORD_ALLOWED_FIELDS と同一）
+// これ以外のフィールドは破棄する：任意フィールド注入によるデータ汚染・肥大化を防ぐ
+const RECORD_ALLOWED_FIELDS = [
+  'driverId', 'driverName', 'date', 'clockIn', 'clockOut', 'status',
+  'breaks', 'manualBreaks', 'fuelEntries',
+  'destination', 'note', 'startMileage', 'endMileage', 'startPlace', 'endPlace',
+  'lodging', 'kumitate', 'bara', 'onetouch', 'kobutsu', 'other', 'count', 'distance',
+  'visits', 'allowances', 'allowanceShortfall', 'allowanceExcess',
+  'alcBMethod', 'alcBRemote', 'alcBResult', 'alcBChecker', 'alcBDate',
+  'alcAMethod', 'alcARemote', 'alcAResult', 'alcAChecker', 'alcADate',
+];
+const RECORD_MAX_JSON_LENGTH = 100000;  // 1レコードの上限（約100KB）
+
 // 日報データを保存（driverId + date で upsert）
 function saveRecord(data) {
   const { driverId, date } = data;
@@ -265,9 +283,17 @@ function saveRecord(data) {
     return { success: false, error: 'conflict', latest: records[idx] };
   }
 
+  // ホワイトリストのフィールドのみ保存（baseSavedAt もここで自然に落ちる）
+  const record = {};
+  for (const k of RECORD_ALLOWED_FIELDS) {
+    if (k in data) record[k] = data[k];
+  }
+  record.date = dateStr;
   // savedAt はサーバー側で付与（ミリ秒精度で一意にし、競合判定の基準にする）
-  const record = { ...data, date: dateStr, savedAt: new Date().toISOString() };
-  delete record.baseSavedAt;
+  record.savedAt = new Date().toISOString();
+  if (JSON.stringify(record).length > RECORD_MAX_JSON_LENGTH) {
+    return { success: false, error: '記録データが大きすぎます' };
+  }
 
   if (idx >= 0) {
     records[idx] = { ...records[idx], ...record };
@@ -316,11 +342,12 @@ function getRecentRecords({ driverId, limit }) {
 // ============================================================
 
 const ACTIONS = [
-  'verifyPassword', 'verifyAdminKey', 'verifyDriverToken',
+  'verifyAdminKey', 'verifyDriverToken',
   'getInit', 'getDrivers', 'getCheckers',
   'getRecords', 'getRecentRecords', 'saveRecord', 'deleteRecord',
-  'getStatus', 'clockIn', 'clockOut', 'alcoholCheck',
   'saveChecker', 'saveDriver', 'regenerateDriverToken',
+  // 以下はモック専用（旧API・GAS本番には無い。フロント未使用）
+  'verifyPassword', 'getStatus', 'clockIn', 'clockOut', 'alcoholCheck',
 ];
 
 function dispatch(action, rawParams) {
