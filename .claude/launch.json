@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mock-gas",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["mock-server/server.js"],
+      "port": 3000
+    },
+    {
+      "name": "app",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["mock-server/static.js"],
+      "port": 8080
+    }
+  ]
+}
