@@ -28,7 +28,7 @@ const MOCK_PASSWORD  = '1234';
 const MOCK_ADMIN_KEY = 'admin123';
 
 // ============================================================
-// 認証
+// 認証・認可（GAS実装 gas/code.gs と同一仕様）
 // ============================================================
 
 function verifyPassword({ password }) {
@@ -36,19 +36,77 @@ function verifyPassword({ password }) {
   return { success: password === MOCK_PASSWORD };
 }
 
+// 管理者キー検証（総当たり対策：連続失敗でロックアウト）
+const ADMIN_FAIL_LIMIT   = 5;
+const ADMIN_LOCK_MS      = 10 * 60 * 1000;  // 10分
+let _adminFails   = 0;
+let _adminLockedAt = 0;
+
 function verifyAdminKey({ key }) {
   if (!key) return { success: false, error: 'key が必要です' };
-  return { success: key === MOCK_ADMIN_KEY };
+  if (_adminFails >= ADMIN_FAIL_LIMIT && Date.now() - _adminLockedAt < ADMIN_LOCK_MS) {
+    return { success: false, error: '試行回数の上限に達しました。しばらく待ってから再試行してください' };
+  }
+  if (key === MOCK_ADMIN_KEY) {
+    _adminFails = 0;
+    return { success: true };
+  }
+  _adminFails++;
+  _adminLockedAt = Date.now();
+  return { success: false };
+}
+
+// リクエストの adminKey / driverToken から認可コンテキストを作る
+function resolveAuth(params) {
+  const auth = { isAdmin: false, driver: null };
+  if (params.adminKey && params.adminKey === MOCK_ADMIN_KEY) auth.isAdmin = true;
+  if (params.driverToken) {
+    // トークンが空のドライバーは照合対象にしない（空文字一致の抜け穴を防ぐ）
+    const d = loadDrivers().find(x => x.url_token && x.url_token === params.driverToken);
+    if (d) auth.driver = d;
+  }
+  return auth;
+}
+
+const FORBIDDEN = { success: false, error: 'forbidden' };
+
+// 指定ドライバーの記録への操作権限：管理者 or 本人のみ。エラー時はレスポンス、OKなら null
+function guardDriver(auth, driverId) {
+  if (auth.isAdmin) return null;
+  if (auth.driver && driverId && auth.driver.id === driverId) return null;
+  return FORBIDDEN;
+}
+
+function guardAnyAuth(auth) { return (auth.isAdmin || auth.driver) ? null : FORBIDDEN; }
+function guardAdmin(auth)   { return auth.isAdmin ? null : FORBIDDEN; }
+
+// ドライバートークンから本人情報を返す（専用URL起動時の解決用）
+function verifyDriverToken(auth) {
+  if (!auth.driver) return { success: false, error: 'invalid token' };
+  return { success: true, driver: { id: auth.driver.id, name: auth.driver.name } };
+}
+
+// 推測不可能なトークンを生成（UUID v4 ベース・ハイフン除去で32文字）
+function newToken() {
+  return require('crypto').randomUUID().replace(/-/g, '');
 }
 
 // ============================================================
 // ドライバー
 // ============================================================
 
-function getDrivers() {
-  return { success: true, drivers: loadDrivers() };
+// url_token はドライバー個人の秘密。管理者以外には返さない
+function stripTokens(drivers, auth) {
+  return drivers.map(d => auth && auth.isAdmin
+    ? { id: d.id, name: d.name, url_token: d.url_token || '' }
+    : { id: d.id, name: d.name });
 }
 
+function getDrivers(params, auth) {
+  return { success: true, drivers: stripTokens(loadDrivers(), auth) };
+}
+
+// 新規追加時は url_token をサーバー側で自動生成して返す（管理者のみ・dispatch でガード済み）
 function saveDriver({ id, name }) {
   if (!id || !name) return { success: false, error: 'id と name が必要です' };
   const drivers = loadDrivers();
@@ -56,11 +114,25 @@ function saveDriver({ id, name }) {
   if (idx >= 0) {
     drivers[idx].name = name;
     saveDrivers(drivers);
-    return { success: true, message: 'ドライバーを更新しました' };
+    return { success: true, message: 'ドライバーを更新しました',
+             driver: { id, name, url_token: drivers[idx].url_token || '' } };
   }
-  drivers.push({ id, name, url_token: id.toLowerCase() });
+  const url_token = newToken();
+  drivers.push({ id, name, url_token });
   saveDrivers(drivers);
-  return { success: true, message: 'ドライバーを追加しました' };
+  return { success: true, message: 'ドライバーを追加しました', driver: { id, name, url_token } };
+}
+
+// ドライバーの url_token を再発行（管理者のみ・dispatch でガード済み）
+function regenerateDriverToken({ id }) {
+  if (!id) return { success: false, error: 'id が必要です' };
+  const drivers = loadDrivers();
+  const idx = drivers.findIndex(d => d.id === id);
+  if (idx === -1) return { success: false, error: '対象のドライバーが見つかりません' };
+  drivers[idx].url_token = newToken();
+  saveDrivers(drivers);
+  return { success: true, message: '専用URLを再発行しました',
+           driver: { id: drivers[idx].id, name: drivers[idx].name, url_token: drivers[idx].url_token } };
 }
 
 // ============================================================
@@ -87,10 +159,10 @@ function saveChecker({ name }) {
 // 初期化（ドライバー＋確認者を1リクエストで返す）
 // ============================================================
 
-function getInit() {
+function getInit(params, auth) {
   return {
     success:  true,
-    drivers:  loadDrivers(),
+    drivers:  stripTokens(loadDrivers(), auth),
     checkers: loadCheckers()
   };
 }
@@ -239,10 +311,54 @@ function getRecentRecords({ driverId, limit }) {
   return { success: true, records: filtered };
 }
 
-module.exports = {
-  verifyPassword, verifyAdminKey,
-  getDrivers, saveDriver,
-  getCheckers, saveChecker, getInit,
-  getStatus, clockIn, clockOut, alcoholCheck,
-  saveRecord, deleteRecord, getRecords, getRecentRecords
-};
+// ============================================================
+// ディスパッチ（GASの doPost と同一の認可ルール）
+// ============================================================
+
+const ACTIONS = [
+  'verifyPassword', 'verifyAdminKey', 'verifyDriverToken',
+  'getInit', 'getDrivers', 'getCheckers',
+  'getRecords', 'getRecentRecords', 'saveRecord', 'deleteRecord',
+  'getStatus', 'clockIn', 'clockOut', 'alcoholCheck',
+  'saveChecker', 'saveDriver', 'regenerateDriverToken',
+];
+
+function dispatch(action, rawParams) {
+  const auth = resolveAuth(rawParams);
+  // 認可用フィールドはデータに混入しないよう除去
+  const { adminKey, driverToken, ...params } = rawParams;
+
+  switch (action) {
+    // ── 認証系（未認証で呼べる） ──
+    case 'verifyPassword':      return verifyPassword(params);
+    case 'verifyAdminKey':      return verifyAdminKey(params);
+    case 'verifyDriverToken':   return verifyDriverToken(auth);
+
+    // ── 読み取り系（トークンは管理者のみに返る） ──
+    case 'getInit':             return getInit(params, auth);
+    case 'getDrivers':          return getDrivers(params, auth);
+    case 'getCheckers':         return getCheckers(params);
+
+    // ── ドライバー記録（管理者 or 本人のみ） ──
+    case 'getRecords':          return guardDriver(auth, params.driverId) || getRecords(params);
+    case 'getRecentRecords':    return guardDriver(auth, params.driverId) || getRecentRecords(params);
+    case 'saveRecord':          return guardDriver(auth, params.driverId) || saveRecord(params);
+    case 'deleteRecord':        return guardDriver(auth, params.driverId) || deleteRecord(params);
+    case 'getStatus':           return guardDriver(auth, params.driverId) || getStatus(params);
+    case 'clockIn':             return guardDriver(auth, params.driverId) || clockIn(params);
+    case 'clockOut':            return guardDriver(auth, params.driverId) || clockOut(params);
+    case 'alcoholCheck':        return guardDriver(auth, params.driverId) || alcoholCheck(params);
+
+    // ── 認証済みユーザーなら可 ──
+    case 'saveChecker':         return guardAnyAuth(auth) || saveChecker(params);
+
+    // ── 管理者のみ ──
+    case 'saveDriver':          return guardAdmin(auth) || saveDriver(params);
+    case 'regenerateDriverToken': return guardAdmin(auth) || regenerateDriverToken(params);
+
+    default:
+      return { success: false, error: `未知のaction: ${action}` };
+  }
+}
+
+module.exports = { dispatch, ACTIONS };

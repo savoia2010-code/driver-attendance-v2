@@ -1,15 +1,21 @@
 /**
  * 勤怠管理アプリ GASバックエンド
  *
- * フロントエンド（index.html）が呼び出す8アクションを実装：
- *   getInit / getRecords / getRecentRecords / saveRecord / deleteRecord /
- *   saveDriver / saveChecker / verifyAdminKey
+ * ■ 認可モデル（3層）
+ *   1. ACCESS_TOKEN   … アプリ共通トークン（bot除け程度。config.js は公開されるため秘密ではない）
+ *   2. driverToken    … ドライバー個人の秘密トークン（url_token）。自分の記録の読み書きのみ許可
+ *   3. adminKey       … 管理者キー。全ドライバーの記録・マスタ管理を許可（総当たり対策あり）
+ *
+ * フロントエンド（index.html）が呼び出すアクション：
+ *   認証不要   : verifyAdminKey / verifyDriverToken
+ *   ドライバー : getInit（トークンは返らない）/ getRecords / getRecentRecords /
+ *                saveRecord / deleteRecord / saveChecker（いずれも自分の分のみ）
+ *   管理者     : 上記すべて（全ドライバー分）＋ saveDriver / regenerateDriverToken
  *
  * ■ スクリプトプロパティ（プロジェクトの設定 → スクリプトプロパティ）
  *   SPREADSHEET_ID … データ保存先スプレッドシートのID（必須）
- *   ACCESS_TOKEN   … APIアクセストークン。設定すると全リクエストで token の一致を検証。
- *                    フロントの config.js の APP_TOKEN と同じ値にする（推奨）
- *   ADMIN_KEY      … 管理者モードのキー（必須）
+ *   ACCESS_TOKEN   … アプリ共通トークン。フロントの config.js の APP_TOKEN と同じ値にする
+ *   ADMIN_KEY      … 管理者モードのキー（必須・長いランダム文字列を推奨）
  *
  * ■ シート構造（無ければ自動作成される）
  *   drivers  : id | name | url_token
@@ -36,28 +42,46 @@ function doPost(e) {
     return jsonOut_({ success: false, error: 'リクエストの形式が不正です' });
   }
 
-  // ── 最低限の認証チェック（トークンはスクリプトプロパティから取得） ──
+  // ── 第1層：アプリ共通トークン ──
   var requiredToken = props_().getProperty('ACCESS_TOKEN');
   if (requiredToken && body.token !== requiredToken) {
     return jsonOut_({ success: false, error: 'unauthorized' });
   }
+
+  // ── 第2層：認可コンテキストを解決（adminKey / driverToken） ──
+  var auth = resolveAuth_(body);
+
+  // 認可用フィールドはデータに混入しないよう除去
   delete body.token;
+  delete body.adminKey;
+  delete body.driverToken;
 
   var action = body.action;
   delete body.action;
 
   try {
     switch (action) {
-      // 読み取り系
-      case 'getInit':           return jsonOut_(getInit_());
-      case 'getRecords':        return jsonOut_(getRecords_(body));
-      case 'getRecentRecords':  return jsonOut_(getRecentRecords_(body));
+      // ── 認証系（未認証で呼べる） ──
       case 'verifyAdminKey':    return jsonOut_(verifyAdminKey_(body));
-      // 書き込み系（LockServiceで直列化）
-      case 'saveRecord':        return jsonOut_(withLock_(function() { return saveRecord_(body); }));
-      case 'deleteRecord':      return jsonOut_(withLock_(function() { return deleteRecord_(body); }));
-      case 'saveDriver':        return jsonOut_(withLock_(function() { return saveDriver_(body); }));
-      case 'saveChecker':       return jsonOut_(withLock_(function() { return saveChecker_(body); }));
+      case 'verifyDriverToken': return jsonOut_(verifyDriverToken_(auth));
+
+      // ── 読み取り系 ──
+      case 'getInit':           return jsonOut_(getInit_(auth));
+      case 'getRecords':        return jsonOut_(guardDriver_(auth, body.driverId) || getRecords_(body));
+      case 'getRecentRecords':  return jsonOut_(guardDriver_(auth, body.driverId) || getRecentRecords_(body));
+
+      // ── 書き込み系（LockServiceで直列化） ──
+      case 'saveRecord':
+        return jsonOut_(guardDriver_(auth, body.driverId) || withLock_(function() { return saveRecord_(body); }));
+      case 'deleteRecord':
+        return jsonOut_(guardDriver_(auth, body.driverId) || withLock_(function() { return deleteRecord_(body); }));
+      case 'saveChecker':
+        return jsonOut_(guardAnyAuth_(auth) || withLock_(function() { return saveChecker_(body); }));
+      case 'saveDriver':
+        return jsonOut_(guardAdmin_(auth) || withLock_(function() { return saveDriver_(body); }));
+      case 'regenerateDriverToken':
+        return jsonOut_(guardAdmin_(auth) || withLock_(function() { return regenerateDriverToken_(body); }));
+
       default:
         return jsonOut_({ success: false, error: '未知のaction: ' + action });
     }
@@ -72,19 +96,90 @@ function doGet(e) {
 }
 
 // ============================================================
-// アクション実装
+// 認可
 // ============================================================
+
+// リクエストの adminKey / driverToken から認可コンテキストを作る
+function resolveAuth_(body) {
+  var auth = { isAdmin: false, driver: null };
+
+  var adminKey = props_().getProperty('ADMIN_KEY');
+  if (adminKey && body.adminKey && body.adminKey === adminKey) {
+    auth.isAdmin = true;
+  }
+
+  if (body.driverToken) {
+    var drivers = readDrivers_();
+    for (var i = 0; i < drivers.length; i++) {
+      // トークンが空のドライバーは照合対象にしない（空文字一致の抜け穴を防ぐ）
+      if (drivers[i].url_token && drivers[i].url_token === body.driverToken) {
+        auth.driver = drivers[i];
+        break;
+      }
+    }
+  }
+  return auth;
+}
+
+// 指定ドライバーの記録への操作権限：管理者 or 本人のみ。エラー時はレスポンス、OKなら null
+function guardDriver_(auth, driverId) {
+  if (auth.isAdmin) return null;
+  if (auth.driver && driverId && auth.driver.id === driverId) return null;
+  return { success: false, error: 'forbidden' };
+}
+
+// 管理者またはいずれかの正規ドライバーであること（確認者追加用）
+function guardAnyAuth_(auth) {
+  return (auth.isAdmin || auth.driver) ? null : { success: false, error: 'forbidden' };
+}
+
+// 管理者であること
+function guardAdmin_(auth) {
+  return auth.isAdmin ? null : { success: false, error: 'forbidden' };
+}
+
+// 管理者キーの検証（総当たり対策：連続失敗でロックアウト）
+var ADMIN_FAIL_LIMIT   = 5;
+var ADMIN_LOCK_SECONDS = 600;  // 10分
 
 function verifyAdminKey_(p) {
   var adminKey = props_().getProperty('ADMIN_KEY');
   if (!adminKey) return { success: false, error: 'ADMIN_KEY が未設定です' };
-  return { success: p.key === adminKey };
+
+  var cache = CacheService.getScriptCache();
+  var fails = Number(cache.get('adminKeyFails') || 0);
+  if (fails >= ADMIN_FAIL_LIMIT) {
+    return { success: false, error: '試行回数の上限に達しました。しばらく待ってから再試行してください' };
+  }
+
+  if (p.key === adminKey) {
+    cache.remove('adminKeyFails');
+    return { success: true };
+  }
+  cache.put('adminKeyFails', String(fails + 1), ADMIN_LOCK_SECONDS);
+  return { success: false };
 }
 
-function getInit_() {
+// ドライバートークンから本人情報を返す（専用URL起動時の解決用）
+function verifyDriverToken_(auth) {
+  if (!auth.driver) return { success: false, error: 'invalid token' };
+  return { success: true, driver: { id: auth.driver.id, name: auth.driver.name } };
+}
+
+// ============================================================
+// アクション実装
+// ============================================================
+
+function getInit_(auth) {
+  var drivers = readDrivers_().map(function(d) {
+    // url_token はドライバー個人の秘密。管理者以外には返さない
+    return auth.isAdmin
+      ? { id: d.id, name: d.name, url_token: d.url_token || '' }
+      : { id: d.id, name: d.name };
+  });
   return {
     success: true,
-    drivers: readDrivers_(),
+    drivers: drivers,
     checkers: readCheckers_(),
   };
 }
@@ -160,7 +255,8 @@ function deleteRecord_(p) {
   return { success: true, message: '記録を削除しました' };
 }
 
-// ドライバーを id で upsert（要ロック済み）
+// ドライバーを id で upsert（管理者のみ・要ロック済み）
+// 新規追加時は url_token（専用URLの秘密トークン）をサーバー側で自動生成して返す
 function saveDriver_(p) {
   if (!p.id || !p.name) return { success: false, error: 'id と name が必要です' };
   var sheet = driversSheet_();
@@ -168,11 +264,31 @@ function saveDriver_(p) {
   for (var i = 1; i < values.length; i++) {
     if (values[i][0] === p.id) {
       sheet.getRange(i + 1, 2).setValue(p.name);
-      return { success: true, message: 'ドライバー名を更新しました' };
+      return { success: true, message: 'ドライバー名を更新しました',
+               driver: { id: p.id, name: p.name, url_token: values[i][2] || '' } };
     }
   }
-  sheet.appendRow([p.id, p.name, p.url_token || '']);
-  return { success: true, message: 'ドライバーを追加しました' };
+  var urlToken = newToken_();
+  sheet.appendRow([p.id, p.name, urlToken]);
+  return { success: true, message: 'ドライバーを追加しました',
+           driver: { id: p.id, name: p.name, url_token: urlToken } };
+}
+
+// ドライバーの url_token を再発行（管理者のみ・要ロック済み）
+// 事前登録済みでトークンが空／推測されやすい場合や、URLが漏れた場合の無効化に使う
+function regenerateDriverToken_(p) {
+  if (!p.id) return { success: false, error: 'id が必要です' };
+  var sheet = driversSheet_();
+  var values = sheet.getDataRange().getDisplayValues();
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][0] === p.id) {
+      var urlToken = newToken_();
+      sheet.getRange(i + 1, 3).setValue(urlToken);
+      return { success: true, message: '専用URLを再発行しました',
+               driver: { id: values[i][0], name: values[i][1], url_token: urlToken } };
+    }
+  }
+  return { success: false, error: '対象のドライバーが見つかりません' };
 }
 
 // 確認者を追加（重複チェックあり・要ロック済み）
@@ -271,6 +387,11 @@ function rowToRecord_(sheet, rowIndex) {
 
 function props_() {
   return PropertiesService.getScriptProperties();
+}
+
+// 推測不可能なトークンを生成（UUID v4 ベース・ハイフン除去で32文字）
+function newToken_() {
+  return Utilities.getUuid().replace(/-/g, '');
 }
 
 // 書き込み処理を直列化する（同時書き込みによる行の二重追加・消失を防ぐ）
