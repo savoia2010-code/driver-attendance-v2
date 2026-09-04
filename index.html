@@ -2547,7 +2547,11 @@ async function startApp() {
   }
 
   // ドライバー設定
-  if (_driverToken) {
+  // 管理者モードは専用URLモードより優先する。
+  // _driverToken は localStorage からも復元されるため、過去にそのブラウザで
+  // 専用URLを開いていると、?mode=admin で入っても専用モードになってしまい、
+  // ドライバーが1人に固定され「管理」タブも消えてしまうため。
+  if (_driverToken && !_adminMode) {
     // 専用URL（?token=）：トークンから本人を解決する
     await resolveDedicatedDriver();
   } else {
