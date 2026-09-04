@@ -849,6 +849,10 @@ body:has(#loading-overlay.show) .bottom-nav {
 .break-mins-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .break-mins-input {
   flex: 1;
+  /* flex アイテムの既定 min-width:auto だと input の固有幅（size=20相当）が
+     下限になり、狭い画面で行がはみ出して削除ボタンが見切れる */
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -861,6 +865,7 @@ body:has(#loading-overlay.show) .bottom-nav {
 .break-mins-input:focus { outline: none; border-color: var(--accent); }
 .break-mins-unit { font-size: 20px; color: var(--text2); white-space: nowrap; }
 .break-mins-del {
+  flex-shrink: 0;
   background: none;
   border: 1px solid rgba(239,68,68,0.5);
   color: var(--danger);
