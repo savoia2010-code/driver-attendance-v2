@@ -25,16 +25,12 @@ git log --oneline -5   # 履歴が見えればOK
 git status             # クリーンならOK
 ```
 
-### 2. config.js を作成する
+### 2. config.js を確認する
 
 `config.js` はリポジトリに含まれている（GitHub Pages で配信するため）。
-通常は編集不要。無い場合のみテンプレートから作成する。
+**コミット済みの値は本番GASを指している**ので、そのままだと本番データを読み書きする。
 
-```bash
-cp config.example.js config.js
-```
-
-開発中（モックサーバー利用）はデフォルトのままでよい：
+モックサーバーで開発する場合は、一時的に `GAS_URL` をローカルに向ける：
 
 ```js
 const CONFIG = {
@@ -43,7 +39,10 @@ const CONFIG = {
 };
 ```
 
-本番GASに接続する場合のみ、デプロイURLと `ACCESS_TOKEN` を設定する（詳細は `gas/README.md`）。
+**この変更はコミットしないこと**（本番URLに戻してから push する）。
+元に戻すには `git checkout -- config.js`。
+
+本番GASのデプロイ手順・スクリプトプロパティは `gas/README.md` を参照。
 
 ### 3. 依存パッケージをインストールする
 
