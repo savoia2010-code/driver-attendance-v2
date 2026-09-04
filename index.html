@@ -846,6 +846,23 @@ body:has(#loading-overlay.show) .bottom-nav {
 .mileage-input:focus { outline: none; }
 
 /* 休憩分数入力 */
+/* 折りたたみセクション（任意項目を既定で畳んでおく） */
+.collapse-header {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: none; border-bottom: 1px solid var(--border);
+  padding: 0 0 8px; margin-bottom: 12px;
+  cursor: pointer; font-family: inherit; text-align: left;
+}
+/* ヘッダー内では section-label の下線・余白を無効化（ヘッダー側が持つ） */
+.collapse-header .section-label { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+.collapse-summary {
+  margin-left: auto; font-size: 13px; font-weight: 700;
+  color: var(--accent); white-space: nowrap;
+}
+.collapse-arrow { flex-shrink: 0; color: var(--text3); font-size: 11px; transition: transform 0.15s; }
+.collapse-header[aria-expanded="true"] .collapse-arrow { transform: rotate(180deg); }
+/* 畳んでいる間は区切り線と下余白を出さない（中身が無いのに空白が残るため） */
+.collapse-header[aria-expanded="false"] { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 .break-mins-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .break-mins-input {
   flex: 1;
@@ -1027,13 +1044,21 @@ body:has(#loading-overlay.show) .bottom-nav {
         <span class="punch-sub">再開</span>
       </button>
     </div>
-    <!-- 休憩（分数入力） -->
+    <!-- 休憩（分数入力）：任意項目のため既定で折りたたむ -->
     <div class="rf-section">
-      <div class="section-label" style="margin-bottom:8px;">⏱ 休憩（分数入力）</div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">各休憩時間を分単位で入力（事後入力可）</div>
-      <div id="punch-manual-breaks-list"></div>
-      <div id="punch-manual-breaks-total" style="display:none;font-size:18px;color:var(--accent);font-weight:700;padding:8px 0 4px;"></div>
-      <button class="rf-add-btn" onclick="addPunchManualBreak()">＋ 休憩追加</button>
+      <button type="button" class="collapse-header" id="punch-manual-breaks-header"
+              aria-expanded="false" aria-controls="punch-manual-breaks-body"
+              onclick="togglePunchManualBreaks()">
+        <span class="section-label">⏱ 休憩（分数入力）</span>
+        <span class="collapse-summary" id="punch-manual-breaks-summary"></span>
+        <span class="collapse-arrow">▼</span>
+      </button>
+      <div id="punch-manual-breaks-body" style="display:none;">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">各休憩時間を分単位で入力（事後入力可）</div>
+        <div id="punch-manual-breaks-list"></div>
+        <div id="punch-manual-breaks-total" style="display:none;font-size:18px;color:var(--accent);font-weight:700;padding:8px 0 4px;"></div>
+        <button class="rf-add-btn" onclick="addPunchManualBreak()">＋ 休憩追加</button>
+      </div>
     </div>
     <!-- 給油情報 -->
     <div class="rf-section">
@@ -3026,6 +3051,30 @@ function confirmPunch() {
 // ============================================================
 // 休憩（分数入力）
 // ============================================================
+// 任意項目なので既定は畳んでおく。セッション中は利用者の開閉を保つ
+let _manualBreaksOpen = false;
+
+function togglePunchManualBreaks() {
+  _manualBreaksOpen = !_manualBreaksOpen;
+  applyPunchManualBreaksCollapse();
+}
+
+// 開閉の反映と、畳んでいる時のヘッダー合計表示
+// （畳んだせいで入力済みの休憩を見落とさないよう、合計はヘッダーに出す）
+function applyPunchManualBreaksCollapse() {
+  const header = document.getElementById('punch-manual-breaks-header');
+  const body   = document.getElementById('punch-manual-breaks-body');
+  const sumEl  = document.getElementById('punch-manual-breaks-summary');
+  if (!header || !body || !sumEl) return;
+  body.style.display = _manualBreaksOpen ? 'block' : 'none';
+  header.setAttribute('aria-expanded', _manualBreaksOpen ? 'true' : 'false');
+
+  const st     = getActiveState();
+  const breaks = (st && st.manualBreaks) || [];
+  const total  = breaks.reduce((acc, b) => acc + (Number(b.mins) || 0), 0);
+  sumEl.textContent = (!_manualBreaksOpen && total > 0) ? '計 ' + total + '分' : '';
+}
+
 function renderPunchManualBreaks() {
   const list    = document.getElementById('punch-manual-breaks-list');
   const totalEl = document.getElementById('punch-manual-breaks-total');
@@ -3043,6 +3092,7 @@ function renderPunchManualBreaks() {
       <button class="break-mins-del" onclick="deletePunchManualBreak(${i})">✕</button>
     </div>`).join('');
   renderPunchManualTotal();
+  applyPunchManualBreaksCollapse();
 }
 
 function addPunchManualBreak() {
@@ -3077,6 +3127,7 @@ function renderPunchManualTotal() {
     totalEl.style.display = 'block';
     totalEl.textContent   = parts + ' ＝ ' + (h > 0 ? h + '時間' : '') + m + '分';
   } else { totalEl.style.display = 'none'; }
+  applyPunchManualBreaksCollapse();
 }
 
 // ============================================================
