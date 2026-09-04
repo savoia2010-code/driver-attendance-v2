@@ -1,0 +1,12 @@
+# 改行コードをLFに統一する
+# Windows と Mac を行き来しても差分ノイズ（全行変更）が出ないようにするため
+* text=auto eol=lf
+
+# バイナリは変換しない
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary

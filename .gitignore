@@ -5,4 +5,6 @@ config.gs
 *.key
 *.pem
 node_modules/
-package-lock.json
+
+# ローカル固有設定（OSごとに内容が変わるため共有しない）
+.claude/settings.local.json
