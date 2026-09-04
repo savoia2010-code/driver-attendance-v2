@@ -1818,8 +1818,14 @@ async function loadRecentRecordsFromGAS(limit = 10, forceReload = false) {
 // ============================================================
 function dateKey(d) {
   if (!d) return '';
+  // JSTの壁時計から日付を取り出す。
+  // toISOString() はUTCに戻してしまうため使わない（JST 00:00〜08:59 が前日になる）。
+  // nowHHMM() と同じく、変換後はローカルゲッターで読む。
   const jst = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
-  return jst.toISOString().split('T')[0];
+  const y  = jst.getFullYear();
+  const m  = String(jst.getMonth() + 1).padStart(2, '0');
+  const dd = String(jst.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
 }
 function todayKey()     { return dateKey(new Date()); }
 function parseHHMM(s)   {
