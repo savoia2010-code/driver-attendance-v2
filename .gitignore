@@ -1,10 +1,18 @@
-config.js
+# 機密情報
 config.gs
 .env
 .env.*
 *.key
 *.pem
+
+# config.js は GitHub Pages で配信する必要があるため追跡する。
+# 秘密は入れないこと（GAS_URL / APP_TOKEN は公開前提。実際の認可は
+# ドライバー個人トークンと管理者キーが担う → gas/README.md 参照）
+
 node_modules/
 
 # ローカル固有設定（OSごとに内容が変わるため共有しない）
 .claude/settings.local.json
+
+# OS が生成するファイル
+.DS_Store

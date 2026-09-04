@@ -59,7 +59,9 @@ const CONFIG = {
   APP_TOKEN: '手順3の ACCESS_TOKEN と同じ値',
 };
 ```
-※ config.js は .gitignore 済み。リポジトリにはコミットしない。
+※ config.js はリポジトリに含まれ、GitHub Pages 経由で公開される。
+ここに書く GAS_URL・APP_TOKEN は秘密として扱えない（上記「認可モデル」の第1層の位置づけ）。
+実際の保護はドライバー個人トークン（url_token）と ADMIN_KEY が担う。
 
 ### 6. 動作確認
 1. ブラウザで GAS_URL を直接開く → `{"status":"ok"}` が表示されればデプロイ成功

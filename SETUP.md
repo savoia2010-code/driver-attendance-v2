@@ -27,8 +27,8 @@ git status             # クリーンならOK
 
 ### 2. config.js を作成する
 
-`config.js` は機密情報を入れるファイルのため git 管理外。
-移行時にコピーされていなければ、テンプレートから作成する。
+`config.js` はリポジトリに含まれている（GitHub Pages で配信するため）。
+通常は編集不要。無い場合のみテンプレートから作成する。
 
 ```bash
 cp config.example.js config.js

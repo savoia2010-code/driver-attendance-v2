@@ -1,5 +1,6 @@
 // このファイルをコピーして config.js にリネームし、値を設定してください
-// config.js は .gitignore に含まれており、リポジトリには含まれません
+// config.js は GitHub Pages で配信する必要があるためリポジトリに含まれる。
+// ここに書いた値は公開される前提で扱うこと（秘密は入れない）
 const CONFIG = {
   // バックエンドのURL
   //   開発: 'http://localhost:3000/mock-gas'（モックサーバー）
