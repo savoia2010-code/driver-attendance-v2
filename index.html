@@ -3542,6 +3542,32 @@ function printDailyReport(date) {
     </tr>`).join('')
     : '<tr><td colspan="6" class="empty">記録なし</td></tr>';
 
+  // 酒気帯び確認（法定記録）。日時はJSTで表示する
+  const alcJst = iso => {
+    if (!iso) return '';
+    const d = new Date(new Date(iso).toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+    const p2 = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}/${p2(d.getMonth()+1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  };
+  const alcRow = (label, side) => {
+    const dt = rec['alc' + side + 'Date'];
+    if (!dt) return '';
+    return `<tr><td><b>${label}</b></td><td>${eh(alcJst(dt))}</td><td class="c">${eh(rec['alc'+side+'Remote']||'')}</td>`
+         + `<td class="c">${eh(rec['alc'+side+'Method']||'')}</td><td class="c">${eh(rec['alc'+side+'Result']||'')}</td>`
+         + `<td>${eh(rec['alc'+side+'Checker']||'')}</td></tr>`;
+  };
+  const alcRows = [alcRow('運転前','B'), alcRow('到着後','A')].filter(Boolean).join('')
+    || '<tr><td colspan="6" class="empty">記録なし</td></tr>';
+
+  // 積込数量
+  const loadCells = [['完成',rec.kumitate],['バラ',rec.bara],['ワンタッチ',rec.onetouch],['小物',rec.kobutsu],['その他',rec.other]];
+  const hasLoad = loadCells.some(([,v]) => v !== '' && v !== undefined && v !== null);
+  const loadTable = hasLoad
+    ? `<tr>${loadCells.map(([l])=>`<th>${l}</th>`).join('')}</tr>`
+      + `<tr>${loadCells.map(([,v])=>`<td class="r">${eh(v||'')}</td>`).join('')}</tr>`
+    : `<tr>${loadCells.map(([l])=>`<th>${l}</th>`).join('')}</tr>`
+      + `<tr><td colspan="5" class="empty">記録なし</td></tr>`;
+
   const shortfallAmt = Number(rec.allowanceShortfall || 0);
   const excessAmt    = Number(rec.allowanceExcess    || 0);
   const allowRows = [
@@ -3601,6 +3627,19 @@ th { background: #e8e8e8; font-weight: bold; text-align: center; white-space: no
       <tr><td><b>乗務終了</b></td><td>${eh(rec.endPlace||'')}</td><td>${eh(date)}</td><td>${eh(rec.clockOut||rec.end||'')}</td><td class="r">${eh(rec.endMileage||'')}</td></tr>
       <tr><td><b>総運行距離</b></td><td colspan="3"></td><td class="r">${(rec.startMileage && rec.endMileage) ? (Number(rec.endMileage)-Number(rec.startMileage))+' km' : '—'}</td></tr>
       <tr><td><b>休憩合計</b></td><td colspan="3"></td><td class="r">${breakStr}</td></tr>
+    </table>
+  </div>
+  <div class="section-wrap">
+    <h2>酒気帯び確認記録</h2>
+    <table>
+      <tr><th>区分</th><th>確認日時</th><th>確認方法</th><th>検知器</th><th>結果</th><th>確認者</th></tr>
+      ${alcRows}
+    </table>
+  </div>
+  <div class="section-wrap">
+    <h2>積込数量</h2>
+    <table>
+      ${loadTable}
     </table>
   </div>
   <div class="section-wrap">
