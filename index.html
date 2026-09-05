@@ -904,6 +904,10 @@ body:has(#loading-overlay.show) .bottom-nav {
 .fuel-row-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .fuel-row-num { font-size: 13px; color: var(--text3); }
 .fuel-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fuel-inputs .fuel-wide { grid-column: 1 / -1; }
+/* 軽油・レギュラー・アドブルーは桁数が少ないので3列に収める */
+.fuel-liters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; grid-column: 1 / -1; }
+.fuel-field-label { font-size: 11px; color: var(--text3); margin-bottom: 4px; }
 
 /* アルコール確認日時表示 */
 .alc-date-display {
@@ -3137,7 +3141,7 @@ function renderFuels() {
   const list = document.getElementById('rf-fuels-list'); if (!list) return;
   const st = getActiveState(); if (!st) return;
   // 1件目は最初から入力できる状態にしておく（休憩の分数入力と同じ扱い）
-  if (!st.fuelEntries || st.fuelEntries.length === 0) st.fuelEntries = [{ liters:'', amount:'' }];
+  if (!st.fuelEntries || st.fuelEntries.length === 0) st.fuelEntries = [{ shop:'', odometer:'', fuel:'', fuelRegular:'', adblue:'' }];
   const fuels = st.fuelEntries;
   list.innerHTML = fuels.map((f, i) => `
     <div class="fuel-row">
@@ -3146,15 +3150,32 @@ function renderFuels() {
         <button class="rec-action-btn" onclick="deleteFuel(${i})">削除</button>
       </div>
       <div class="fuel-inputs">
-        <div>
-          <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">数量（L）</div>
-          <input type="text" inputmode="decimal" class="form-input" value="${escHtml(f.liters||'')}"
-            placeholder="0.0" oninput="updateFuel(${i},'liters',this.value)">
+        <div class="fuel-wide">
+          <div class="fuel-field-label">給油店名</div>
+          <input type="text" class="form-input" value="${escHtml(f.shop||'')}"
+            placeholder="例: 〇〇SS" oninput="updateFuel(${i},'shop',this.value)">
         </div>
-        <div>
-          <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">金額（円）</div>
-          <input type="text" inputmode="numeric" class="form-input" value="${escHtml(f.amount||'')}"
-            placeholder="0" oninput="updateFuel(${i},'amount',this.value)">
+        <div class="fuel-wide">
+          <div class="fuel-field-label">ODメーター（km）</div>
+          <input type="text" inputmode="numeric" class="form-input" value="${escHtml(f.odometer||'')}"
+            placeholder="0" oninput="updateFuel(${i},'odometer',this.value)">
+        </div>
+        <div class="fuel-liters">
+          <div>
+            <div class="fuel-field-label">軽油（ℓ）</div>
+            <input type="text" inputmode="decimal" class="form-input" value="${escHtml(f.fuel||'')}"
+              placeholder="0.0" oninput="updateFuel(${i},'fuel',this.value)">
+          </div>
+          <div>
+            <div class="fuel-field-label">レギュラー（ℓ）</div>
+            <input type="text" inputmode="decimal" class="form-input" value="${escHtml(f.fuelRegular||'')}"
+              placeholder="0.0" oninput="updateFuel(${i},'fuelRegular',this.value)">
+          </div>
+          <div>
+            <div class="fuel-field-label">アドブルー（ℓ）</div>
+            <input type="text" inputmode="decimal" class="form-input" value="${escHtml(f.adblue||'')}"
+              placeholder="0.0" oninput="updateFuel(${i},'adblue',this.value)">
+          </div>
         </div>
       </div>
     </div>`).join('');
@@ -3163,7 +3184,7 @@ function renderFuels() {
 function addFuel() {
   const st = getActiveState(); if (!st) return;
   if (!st.fuelEntries) st.fuelEntries = [];
-  st.fuelEntries.push({ liters:'', amount:'' });
+  st.fuelEntries.push({ shop:'', odometer:'', fuel:'', fuelRegular:'', adblue:'' });
   renderFuels(); saveActiveState();
 }
 
