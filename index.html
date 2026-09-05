@@ -3552,8 +3552,10 @@ function printDailyReport(date) {
   const alcRow = (label, side) => {
     const dt = rec['alc' + side + 'Date'];
     if (!dt) return '';
+    // 見出しが「検知器」なので値は 有/無 に短縮する
+    const dev = String(rec['alc'+side+'Method']||'').replace('検知器','') || '—';
     return `<tr><td><b>${label}</b></td><td>${eh(alcJst(dt))}</td><td class="c">${eh(rec['alc'+side+'Remote']||'')}</td>`
-         + `<td class="c">${eh(rec['alc'+side+'Method']||'')}</td><td class="c">${eh(rec['alc'+side+'Result']||'')}</td>`
+         + `<td class="c">${eh(dev)}</td><td class="c">${eh(rec['alc'+side+'Result']||'')}</td>`
          + `<td>${eh(rec['alc'+side+'Checker']||'')}</td></tr>`;
   };
   const alcRows = [alcRow('運転前','B'), alcRow('到着後','A')].filter(Boolean).join('')
@@ -3608,9 +3610,14 @@ th { background: #e8e8e8; font-weight: bold; text-align: center; white-space: no
 .close-btn { display: block; width: 100%; padding: 14px; font-size: 16pt; font-weight: bold; background: #1a56db; color: #fff; border: none; border-radius: 8px; cursor: pointer; margin-bottom: 5mm; letter-spacing: 1px; }
 .close-btn:active { background: #1440a0; }
 @media print { .close-btn { display: none !important; } }
+/* 短い値の列は折り返さない（「検知器有」等が2行になるのを防ぐ） */
+.nw td, .nw th { white-space: nowrap; }
+/* 地点名・訪問先など長文が入りうるセルだけは折り返しを許す */
+.nw td.wrap { white-space: normal; }
 </style>
 </head><body>
 <button class="close-btn" onclick="window.close()">← 閉じてアプリに戻る</button>
+<div id="sheet">
 <h1>運 行 日 報</h1>
 <div class="outer-border">
   <div class="info-grid" style="border:1px solid #aaa;padding:3mm;margin-bottom:3mm;">
@@ -3620,31 +3627,31 @@ th { background: #e8e8e8; font-weight: bold; text-align: center; white-space: no
   </div>
   <div class="section-wrap">
     <h2>運行記録</h2>
-    <table>
+    <table class="nw">
       <tr><th>区分</th><th>地点名</th><th>年月日</th><th>時間</th><th>ODメーター(km)</th></tr>
-      <tr><td><b>乗務開始</b></td><td>${eh(rec.startPlace||rec.note||'')}</td><td>${eh(rec.startDate||date)}</td><td>${eh(rec.clockIn||rec.start||'')}</td><td class="r">${eh(rec.startMileage||'')}</td></tr>
-      ${(rec.visits||[]).map((v,i)=>`<tr><td>訪問先${i+1}</td><td colspan="4">${eh(v.place||'')}${v.report?`　${eh(v.report)}`:''}</td></tr>`).join('')}
-      <tr><td><b>乗務終了</b></td><td>${eh(rec.endPlace||'')}</td><td>${eh(date)}</td><td>${eh(rec.clockOut||rec.end||'')}</td><td class="r">${eh(rec.endMileage||'')}</td></tr>
+      <tr><td><b>乗務開始</b></td><td class="wrap">${eh(rec.startPlace||rec.note||'')}</td><td>${eh(rec.startDate||date)}</td><td>${eh(rec.clockIn||rec.start||'')}</td><td class="r">${eh(rec.startMileage||'')}</td></tr>
+      ${(rec.visits||[]).map((v,i)=>`<tr><td>訪問先${i+1}</td><td class="wrap" colspan="4">${eh(v.place||'')}${v.report?`　${eh(v.report)}`:''}</td></tr>`).join('')}
+      <tr><td><b>乗務終了</b></td><td class="wrap">${eh(rec.endPlace||'')}</td><td>${eh(date)}</td><td>${eh(rec.clockOut||rec.end||'')}</td><td class="r">${eh(rec.endMileage||'')}</td></tr>
       <tr><td><b>総運行距離</b></td><td colspan="3"></td><td class="r">${(rec.startMileage && rec.endMileage) ? (Number(rec.endMileage)-Number(rec.startMileage))+' km' : '—'}</td></tr>
       <tr><td><b>休憩合計</b></td><td colspan="3"></td><td class="r">${breakStr}</td></tr>
     </table>
   </div>
   <div class="section-wrap">
     <h2>酒気帯び確認記録</h2>
-    <table>
+    <table class="nw">
       <tr><th>区分</th><th>確認日時</th><th>確認方法</th><th>検知器</th><th>結果</th><th>確認者</th></tr>
       ${alcRows}
     </table>
   </div>
   <div class="section-wrap">
     <h2>積込数量</h2>
-    <table>
+    <table class="nw">
       ${loadTable}
     </table>
   </div>
   <div class="section-wrap">
     <h2>給油情報</h2>
-    <table>
+    <table class="nw">
       <tr><th>#</th><th>給油店名</th><th>ODメーター(km)</th><th>軽油(ℓ)</th><th>レギュラー(ℓ)</th><th>アドブルー(ℓ)</th></tr>
       ${fuelRows}
     </table>
@@ -3658,7 +3665,26 @@ th { background: #e8e8e8; font-weight: bold; text-align: center; white-space: no
   </div>
 </div>
 <div class="footer">印刷日時: ${new Date().toLocaleString('ja-JP')}</div>
+</div>
 <scr` + `ipt>
+// 訪問先・給油・手当の件数によって高さが変わるため、A4縦1枚に収まるよう必要な分だけ縮小する。
+// mm→px は実測して求める（端末やズーム設定に依存しないため）。
+(function fitToOnePage() {
+  var sheet = document.getElementById('sheet');
+  if (!sheet) return;
+  var probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;height:100mm;';
+  document.body.appendChild(probe);
+  var pxPerMm = probe.getBoundingClientRect().height / 100;
+  probe.parentNode.removeChild(probe);
+  // A4縦297mm から @page の上下余白12mm×2 と body の上下padding 6mm×2 を引く
+  var availPx = (297 - 24 - 12) * pxPerMm;
+  var actualPx = sheet.getBoundingClientRect().height;
+  if (actualPx > availPx) {
+    // zoom は縮小後の高さで改ページ判定されるため、transform より確実に1枚に収まる
+    sheet.style.zoom = Math.max(0.5, (availPx / actualPx) * 0.98);
+  }
+})();
 setTimeout(function(){ window.print(); }, 600);
 </scr` + `ipt>
 </body></html>`;
