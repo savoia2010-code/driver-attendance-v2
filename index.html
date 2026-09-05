@@ -2302,7 +2302,7 @@ function viewDay1Report() {
   if (content) {
     content.innerHTML = `
       <div style="margin-bottom:8px;"><strong>日付</strong>: ${escHtml(_lodgingDay1Date)}</div>
-      <div style="margin-bottom:8px;"><strong>始業→到着</strong>: ${escHtml(rec.start||'—')} → ${escHtml(rec.end||'—')}</div>
+      <div style="margin-bottom:8px;"><strong>始業→到着</strong>: ${escHtml(rec.clockIn||rec.start||'—')} → ${escHtml(rec.clockOut||rec.end||'—')}</div>
       <div style="margin-bottom:8px;"><strong>運転前確認</strong>: ${fmtAlc('B')}</div>
       <div style="margin-bottom:8px;"><strong>配送地</strong>: ${escHtml(rec.destination||'—')}</div>
       <div style="margin-bottom:8px;"><strong>宿泊</strong>: ${rec.lodging ? 'あり' : 'なし'}</div>`;
@@ -3596,9 +3596,9 @@ th { background: #e8e8e8; font-weight: bold; text-align: center; white-space: no
     <h2>運行記録</h2>
     <table>
       <tr><th>区分</th><th>地点名</th><th>年月日</th><th>時間</th><th>ODメーター(km)</th></tr>
-      <tr><td><b>乗務開始</b></td><td>${eh(rec.startPlace||rec.note||'')}</td><td>${eh(rec.startDate||date)}</td><td>${eh(rec.start||'')}</td><td class="r">${eh(rec.startMileage||'')}</td></tr>
+      <tr><td><b>乗務開始</b></td><td>${eh(rec.startPlace||rec.note||'')}</td><td>${eh(rec.startDate||date)}</td><td>${eh(rec.clockIn||rec.start||'')}</td><td class="r">${eh(rec.startMileage||'')}</td></tr>
       ${(rec.visits||[]).map((v,i)=>`<tr><td>訪問先${i+1}</td><td colspan="4">${eh(v.place||'')}${v.report?`　${eh(v.report)}`:''}</td></tr>`).join('')}
-      <tr><td><b>乗務終了</b></td><td>${eh(rec.endPlace||'')}</td><td>${eh(date)}</td><td>${eh(rec.end||'')}</td><td class="r">${eh(rec.endMileage||'')}</td></tr>
+      <tr><td><b>乗務終了</b></td><td>${eh(rec.endPlace||'')}</td><td>${eh(date)}</td><td>${eh(rec.clockOut||rec.end||'')}</td><td class="r">${eh(rec.endMileage||'')}</td></tr>
       <tr><td><b>総運行距離</b></td><td colspan="3"></td><td class="r">${(rec.startMileage && rec.endMileage) ? (Number(rec.endMileage)-Number(rec.startMileage))+' km' : '—'}</td></tr>
       <tr><td><b>休憩合計</b></td><td colspan="3"></td><td class="r">${breakStr}</td></tr>
     </table>
@@ -3695,7 +3695,7 @@ async function printMonthlyReport(driverId, offset) {
       const rec = byDate[date];
       const [,mo,da] = date.split('-');
       const isHol = isWeekend(date);
-      if (!rec || !rec.start) {
+      if (!rec || !(rec.clockIn || rec.start)) {
         rows.push({ date, mo, da, isHol, rec: null, calc: null, dist: '', lodgingAmt: 0, allowDetail: '', allowSum: 0, shortfallAmt: 0, excessAmt: 0, subtotal: 0, fuelTotal: 0 });
         return;
       }
@@ -3953,7 +3953,7 @@ td { border: 1px solid #888; padding: 2px 2px; vertical-align: middle; font-size
         const rec = byDate[date];
         const [,mo,da] = date.split('-');
         const isHol = isWeekend(date);
-        if (!rec || !rec.start) {
+        if (!rec || !(rec.clockIn || rec.start)) {
           rows.push({ date, mo, da, isHol, rec: null, calc: null, dist: '', lodgingAmt: 0, allowDetail: '', allowSum: 0, shortfallAmt: 0, excessAmt: 0, subtotal: 0, fuelTotal: 0 });
           return;
         }
