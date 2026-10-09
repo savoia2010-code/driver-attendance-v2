@@ -1524,7 +1524,7 @@ async function gasGet(params) {
 // Content-Type は text/plain にする：application/json だとブラウザがCORSプリフライト
 // （OPTIONS）を送り、実GASはこれに応答できず通信が失敗するため。
 // GAS側・モックサーバー側ともボディをJSONとして解釈する。
-async function gasPost(data) {
+async function gasPost(data, timeoutMs = 15000) {
   // 認可情報を自動付与（サーバー側で毎回検証される）
   const auth = { token: CONFIG.APP_TOKEN || '' };
   if (_driverToken) auth.driverToken = _driverToken;
@@ -1533,7 +1533,7 @@ async function gasPost(data) {
     method:  'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body:    JSON.stringify({ ...auth, ...data })
-  }, 15000);
+  }, timeoutMs);
   const json = await res.json();
   if (json && json.error) {
     const err = new Error(json.error);
@@ -1934,7 +1934,7 @@ function calcBreakMins(breaks, manualBreaks) {
     if (e < s) e += 24 * 60;
     return sum + (e - s);
   }, 0);
-  const manual = (manualBreaks || []).reduce((sum, b) => sum + (Number(b.mins) || 0), 0);
+  const manual = (manualBreaks || []).reduce((sum, b) => sum + (toNum(b.mins) || 0), 0);
   return timed + manual;
 }
 
@@ -1969,7 +1969,7 @@ function calcRecord(rec) {
     workMins  += (seg.e - seg.s) - n;
   }
   const breakMins  = calcBreakMins(rec.breaks, rec.manualBreaks);
-  const manualMins = (rec.manualBreaks || []).reduce((s, b) => s + (Number(b.mins) || 0), 0);
+  const manualMins = (rec.manualBreaks || []).reduce((s, b) => s + (toNum(b.mins) || 0), 0);
   workMins = Math.max(0, workMins - manualMins);
 
   const isHoliday   = (rec.type === 'holiday' || isWeekend(rec.date || rec.startDate || ''));
@@ -3091,7 +3091,7 @@ function applyPunchManualBreaksCollapse() {
 
   const st     = getActiveState();
   const breaks = (st && st.manualBreaks) || [];
-  const total  = breaks.reduce((acc, b) => acc + (Number(b.mins) || 0), 0);
+  const total  = breaks.reduce((acc, b) => acc + (toNum(b.mins) || 0), 0);
   sumEl.textContent = (!_manualBreaksOpen && total > 0) ? '計 ' + total + '分' : '';
 }
 
@@ -3105,7 +3105,7 @@ function renderPunchManualBreaks() {
   list.innerHTML = st.manualBreaks.map((b, i) => `
     <div class="break-mins-row">
       <input type="text" inputmode="numeric" pattern="[0-9]*" class="break-mins-input"
-        value="${Number(b.mins) || ''}" placeholder="分"
+        value="${toNum(b.mins) || ''}" placeholder="分"
         onchange="updatePunchManualBreak(${i}, toNum(this.value))"
         onblur="updatePunchManualBreak(${i}, toNum(this.value))">
       <span class="break-mins-unit">分</span>
@@ -3141,9 +3141,9 @@ function renderPunchManualTotal() {
   const st = getActiveState(); if (!st) return;
   const breaks = st.manualBreaks || [];
   if (breaks.length > 0) {
-    const total = breaks.reduce((s, b) => s + (Number(b.mins) || 0), 0);
+    const total = breaks.reduce((s, b) => s + (toNum(b.mins) || 0), 0);
     const h = Math.floor(total / 60), m = total % 60;
-    const parts = breaks.map(b => (Number(b.mins)||0) + '分').join(' + ');
+    const parts = breaks.map(b => (toNum(b.mins)||0) + '分').join(' + ');
     totalEl.style.display = 'block';
     totalEl.textContent   = parts + ' ＝ ' + (h > 0 ? h + '時間' : '') + m + '分';
   } else { totalEl.style.display = 'none'; }
@@ -3734,6 +3734,32 @@ function openMonthlyPdfModal(driverId) {
     modal.classList.remove('open');
     printMonthlyReportAll(_monthlyPdfOffset);
   };
+  const sheetBtn = document.getElementById('monthlySheetBtn');
+  sheetBtn.style.display = _adminMode ? 'block' : 'none';
+  sheetBtn.onclick = function() {
+    modal.classList.remove('open');
+    exportMonthlySheets(_monthlyPdfOffset);
+  };
+}
+
+// 事務所用の月次シート（別スプレッドシート）をGASに生成させる（管理者のみ）
+// 期間はPDFと同じ締め期間（26日〜翌25日）。締め月を 'YYYY-MM' で渡す
+async function exportMonthlySheets(offset) {
+  const end = getPeriod(offset || 0).end;
+  const periodEnd = end.getFullYear() + '-' + String(end.getMonth() + 1).padStart(2, '0');
+  return guardedAction('monthlySheets', async () => {
+    try {
+      // 全員分のシートを組み立てるため通常より時間がかかる
+      const res = await gasPost({ action: 'generateMonthlySheets', periodEnd }, 90000);
+      if (!res.success) throw new Error(res.error || '生成失敗');
+      const made = (res.sheets || []).length;
+      const skipped = (res.skipped || []).length;
+      const detail = `${made}人分のシートを作成しました` + (skipped ? `（記録なし ${skipped}人は省略）` : '');
+      openConfirm('📗 事務所用シートを出力しました', detail, () => window.open(res.url, '_blank'), 'シートを開く', false);
+    } catch (e) {
+      showToast('⚠ シート出力に失敗: ' + (e.message || '通信エラー'), true);
+    }
+  }, { loading: 'シートを生成中...' });
 }
 
 function _monthlyPdfChangeOffset(dir) {
@@ -4176,6 +4202,8 @@ init();
         <button class="confirm-btn-ok" id="monthlyPdfPrintBtn" style="flex:1;">📊 個別出力</button>
       </div>
       <button id="monthlyPdfAllBtn" style="width:100%;padding:10px;background:var(--info);color:#fff;border:none;border-radius:8px;font-size:22px;cursor:pointer;font-family:'Noto Sans JP',sans-serif;">👥 全員一括印刷</button>
+      <!-- 管理者のみ：事務所用スプレッドシート（別ファイル）にこの期間の全員分を書き出す -->
+      <button id="monthlySheetBtn" style="display:none;width:100%;padding:10px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:18px;cursor:pointer;font-family:'Noto Sans JP',sans-serif;">📗 事務所用シートに出力（全員）</button>
     </div>
   </div>
 </div>

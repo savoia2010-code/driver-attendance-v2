@@ -140,6 +140,23 @@ function regenerateDriverToken({ id }) {
            driver: { id: drivers[idx].id, name: drivers[idx].name, url_token: drivers[idx].url_token } };
 }
 
+// 事務所用の月次シート生成（管理者のみ・dispatch でガード済み）
+// モックではスプレッドシートを作れないため、GAS と同じ形のレスポンスだけ返す
+function generateMonthlySheets({ periodEnd, driverId }) {
+  if (periodEnd && !/^\d{4}-\d{2}$/.test(String(periodEnd))) {
+    return { success: false, error: 'periodEnd は YYYY-MM で指定してください' };
+  }
+  const drivers = loadDrivers().filter(d => !driverId || d.id === driverId);
+  if (driverId && !drivers.length) return { success: false, error: '対象のドライバーが見つかりません' };
+  const yymm = periodEnd ? periodEnd.slice(2, 4) + '/' + periodEnd.slice(5, 7) : '00/00';
+  return {
+    success: true,
+    url: 'http://localhost:3000/mock-monthly-sheet',
+    sheets: drivers.map(d => `${yymm}/${d.name}`),
+    skipped: [],
+  };
+}
+
 // ============================================================
 // 確認者
 // ============================================================
@@ -345,7 +362,7 @@ const ACTIONS = [
   'verifyAdminKey', 'verifyDriverToken',
   'getInit', 'getDrivers', 'getCheckers',
   'getRecords', 'getRecentRecords', 'saveRecord', 'deleteRecord',
-  'saveChecker', 'saveDriver', 'regenerateDriverToken',
+  'saveChecker', 'saveDriver', 'regenerateDriverToken', 'generateMonthlySheets',
   // 以下はモック専用（旧API・GAS本番には無い。フロント未使用）
   'verifyPassword', 'getStatus', 'clockIn', 'clockOut', 'alcoholCheck',
 ];
@@ -382,6 +399,7 @@ function dispatch(action, rawParams) {
     // ── 管理者のみ ──
     case 'saveDriver':          return guardAdmin(auth) || saveDriver(params);
     case 'regenerateDriverToken': return guardAdmin(auth) || regenerateDriverToken(params);
+    case 'generateMonthlySheets': return guardAdmin(auth) || generateMonthlySheets(params);
 
     default:
       return { success: false, error: `未知のaction: ${action}` };
