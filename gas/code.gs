@@ -428,19 +428,50 @@ function generateMonthlySheets_(p) {
 
   var allRecords = readAllRecords_().filter(function(r) { return r.date >= fromKey && r.date <= toKey; });
   var ss = SpreadsheetApp.openById(ssId);
-  var created = [], skipped = [];
+  var created = [], skipped = [], existing = [];
 
   drivers.forEach(function(d) {
     var recs = allRecords.filter(function(r) { return r.driverId === d.id; });
     // 全員生成のときは記録の無い人を飛ばす（空タブで埋まらないように）。個別指定なら空でも作る
     if (!recs.length && !p.driverId) { skipped.push(d.name); return; }
+    // skipExisting（自動生成）は既存タブに触らない。事務所の手直しを無人処理で消さないため
+    var sheetName = monthlySheetName_(endYear, endMonth, d.name);
+    if (p.skipExisting && ss.getSheetByName(sheetName)) { existing.push(sheetName); return; }
     var byDate = {};
     recs.forEach(function(r) { byDate[r.date] = r; });
-    var sheetName = buildMonthlySheet_(ss, d, endYear, endMonth, periodStart, periodEnd, byDate);
+    buildMonthlySheet_(ss, d, endYear, endMonth, periodStart, periodEnd, byDate);
     created.push(sheetName);
   });
 
-  return { success: true, url: ss.getUrl(), sheets: created, skipped: skipped };
+  return { success: true, url: ss.getUrl(), sheets: created, skipped: skipped, existing: existing };
+}
+
+function monthlySheetName_(endYear, endMonth, driverName) {
+  return String(endYear).slice(2) + '/' + ('0' + endMonth).slice(-2) + '/' + driverName;
+}
+
+// ── 自動生成（時間主導トリガー） ──
+// 毎月27日の 0〜1時に、25日で締まった期間（前月26日〜当月25日）の全員分を生成する。
+// 26日いっぱいは打刻の遅れ・訂正の余地として空け、27日になってから固める。
+// 既にあるタブは作らない（手動ボタンだけが作り直す）。
+function monthlyAutoGenerate() {
+  var now = new Date();
+  var periodEnd = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM');  // 27日実行なので当月が締め月
+  var result = withLock_(function() {
+    return generateMonthlySheets_({ periodEnd: periodEnd, skipExisting: true });
+  });
+  console.log('monthlyAutoGenerate ' + periodEnd + ': ' + JSON.stringify(result));
+  return result;
+}
+
+// トリガーを登録する。GASエディタでこの関数を1回「実行」すれば以後は自動で動く
+// （二重登録しないよう、同じ関数のトリガーは先に消す）
+function installMonthlyTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'monthlyAutoGenerate') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('monthlyAutoGenerate').timeBased().onMonthDay(27).atHour(0).create();
+  console.log('トリガーを登録しました: 毎月27日 0〜1時 monthlyAutoGenerate');
 }
 
 function buildMonthlySheet_(ss, driver, endYear, endMonth, periodStart, periodEnd, byDate) {
@@ -449,9 +480,7 @@ function buildMonthlySheet_(ss, driver, endYear, endMonth, periodStart, periodEn
   headers.forEach(function(h, i) { col[h] = i + 1; });
   var ncol = headers.length;
 
-  var yy = String(endYear).slice(2);
-  var mm = ('0' + endMonth).slice(-2);
-  var sheetName = yy + '/' + mm + '/' + driver.name;
+  var sheetName = monthlySheetName_(endYear, endMonth, driver.name);
 
   // 期間内の日付を列挙
   var days = [];
